@@ -109,7 +109,63 @@ systemctl restart nginx
 
 ---
 
-## 📌 Topik Penting Update Terakhir
-- **Penyimpanan:** Beralih penuh dari `localStorage` front-end yang rilis kemarin, kini menggunakan data backend utuh menggunakan **SQLite3**.
-- **Media & File:** Semua aset stream langsung di transcode oleh System ke folder `/uploads/`.
-- **System Specs Analyzer:** Aplikasi mencatat beban Ping Network, Kapasitas RAM/ROM, dan jumlah kelonggaran Core CPU VPS secara real-time.
+## 🔄 Update Kode ke GitHub (Clean Push)
+
+Setiap kali Anda melakukan perubahan kode dan ingin push ke GitHub, lakukan langkah berikut agar **hanya source code murni** yang terupload (tanpa data user, database, file upload, dsb):
+
+### Cara Cepat (1 Perintah)
+```bash
+git add .
+git commit -m "update: deskripsi perubahan"
+git push origin main
+```
+
+> `.gitignore` sudah dikonfigurasi untuk memblokir semua file sensitif secara otomatis:
+> `uploads/`, `data/`, `db/*.db`, `*.mp4`, `*.m4a`, `*.jpg`, `*.png`, `*.tmp`, dll.
+
+### Jika Ada File Besar Tertinggal di History
+Jika push ditolak karena _Large Files Detected (GH001)_, bersihkan history dengan cara berikut:
+
+```bash
+# Buat branch baru tanpa riwayat lama
+git checkout --orphan clean-main
+git add .
+git commit -m "clean: fresh source code release"
+
+# Ganti branch main dengan yang bersih
+git branch -D main
+git branch -m clean-main main
+git push --force origin main
+```
+
+> ⚠️ **Peringatan:** `--force` akan menghapus seluruh riwayat commit lama di GitHub. Pastikan semua perubahan sudah di-commit sebelum menjalankannya.
+
+---
+
+## 🔄 Update Aplikasi di VPS
+
+Setelah push kode baru ke GitHub, jalankan perintah berikut di VPS untuk menarik pembaruan:
+
+```bash
+cd /var/www/streamtube
+
+# Pull perubahan terbaru
+git pull origin main
+
+# Install dependencies baru (jika ada)
+npm install
+
+# Restart server
+pm2 restart streamtube
+```
+
+> Data user, database, dan file upload di VPS **tidak akan terpengaruh** karena folder `uploads/`, `data/`, dan `db/*.db` sudah di-exclude oleh `.gitignore`.
+
+---
+
+## 📌 Catatan Penting
+- **Penyimpanan:** Menggunakan **SQLite3** di backend (`data/streamtube.db`), dibuat otomatis saat pertama kali server dijalankan.
+- **Folder Uploads:** `uploads/` dibuat otomatis oleh server saat pertama kali dijalankan. Tidak perlu membuat manual.
+- **Media & File:** Semua aset stream di-transcode oleh sistem ke folder `/uploads/`.
+- **System Specs Analyzer:** Aplikasi mendeteksi Network Speed, RAM, Storage, dan CPU Cores VPS secara real-time.
+- **FFmpeg:** Wajib terinstall di server untuk live streaming dan thumbnail generation (`apt install -y ffmpeg`).
