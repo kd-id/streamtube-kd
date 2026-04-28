@@ -1,0 +1,8 @@
+version: "3.8"
+services:
+  streamtube:
+    build: .
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    container_name: streamtube-pro

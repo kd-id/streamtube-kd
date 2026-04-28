@@ -1,0 +1,53 @@
+.app-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-wrapper {
+  flex: 1;
+  min-width: 0;
+  margin-left: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left var(--transition-normal);
+}
+
+/* When sidebar is collapsed, reduce margin to collapsed width */
+.app-layout.sidebar-is-collapsed .main-wrapper {
+  margin-left: var(--sidebar-collapsed);
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* ─── Mobile: sidebar fully hidden, content takes full width ─── */
+@media (max-width: 768px) {
+  .main-wrapper {
+    margin-left: 0 !important;
+    padding-bottom: 60px; /* space for bottom nav */
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 200;
+    animation: fadeIn 0.2s ease;
+  }
+}
+
+/* ─── Tablet adjustments ─── */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .app-layout:not(.sidebar-is-collapsed) .main-wrapper {
+    margin-left: var(--sidebar-width);
+  }
+}

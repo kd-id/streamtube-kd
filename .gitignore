@@ -1,0 +1,66 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+
+# Build
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ─── User Data (JANGAN UPLOAD KE GITHUB) ───
+# Database files
+data/
+db/*.db
+db/*.sqlite
+db/*.db-shm
+db/*.db-wal
+database.sqlite
+*.db
+*.sqlite
+
+# Uploaded media files
+uploads/
+
+# Media files
+*.mp4
+*.m4a
+*.mkv
+*.avi
+*.mov
+*.wav
+*.mp3
+*.flac
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.webm
+*.tmp
+*.tmp.*
+
+# Debug / temp files
+.log/
+clean_error*.txt
+check-tcp.js
+wipe-all.js
+fix-gallery*
