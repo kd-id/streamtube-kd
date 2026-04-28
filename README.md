@@ -163,6 +163,57 @@ pm2 restart streamtube
 
 ---
 
+## 🗑️ Hapus & Install Ulang di VPS (Fresh Reinstall)
+
+Jika Anda ingin menghapus semua kode lama dan install ulang dari nol (**data user/upload tetap aman**):
+
+```bash
+cd /var/www/streamtube
+
+# 1. Stop server yang sedang berjalan
+pm2 stop streamtube
+pm2 delete streamtube
+
+# 2. Backup data user (database & uploads)
+cp -r data/ /tmp/streamtube-backup-data/
+cp -r uploads/ /tmp/streamtube-backup-uploads/
+
+# 3. Hapus semua kode lama
+rm -rf /var/www/streamtube/*
+rm -rf /var/www/streamtube/.*  2>/dev/null
+
+# 4. Clone ulang source code terbaru
+cd /var/www/streamtube
+git clone https://github.com/username/streamtube-pro.git .
+
+# 5. Install dependencies
+npm install
+
+# 6. Kembalikan data user dari backup
+cp -r /tmp/streamtube-backup-data/ data/
+cp -r /tmp/streamtube-backup-uploads/ uploads/
+
+# 7. Jalankan kembali server
+pm2 start npm --name "streamtube" -- run start
+pm2 save
+```
+
+### Jika Ingin Reset Total (Hapus Semua Termasuk Data User)
+
+```bash
+pm2 stop streamtube && pm2 delete streamtube
+rm -rf /var/www/streamtube/*
+cd /var/www/streamtube
+git clone https://github.com/username/streamtube-pro.git .
+npm install
+pm2 start npm --name "streamtube" -- run start
+pm2 save
+```
+
+> ⚠️ **Peringatan:** Perintah di atas akan menghapus semua data user, database, dan file upload secara permanen. Tidak bisa dikembalikan.
+
+---
+
 ## 📌 Catatan Penting
 - **Penyimpanan:** Menggunakan **SQLite3** di backend (`data/streamtube.db`), dibuat otomatis saat pertama kali server dijalankan.
 - **Folder Uploads:** `uploads/` dibuat otomatis oleh server saat pertama kali dijalankan. Tidak perlu membuat manual.
