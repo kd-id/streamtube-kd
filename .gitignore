@@ -28,7 +28,7 @@ dist-ssr
 
 # ─── User Data (JANGAN UPLOAD KE GITHUB) ───
 # Database files
-data/
+/data/
 db/*.db
 db/*.sqlite
 db/*.db-shm
