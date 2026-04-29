@@ -21,6 +21,190 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // ── Active FFmpeg processes ──
 const activeStreams = new Map();
 
+// ── Adaptive Quality Tiers ──
+const QUALITY_TIERS = [
+  { tier: 1, name: '360p',  resolution: '640x360',   bitrate: '600',   fps: '24', keyint: 48 },
+  { tier: 2, name: '480p',  resolution: '854x480',   bitrate: '1000',  fps: '30', keyint: 60 },
+  { tier: 3, name: '720p',  resolution: '1280x720',  bitrate: '2500',  fps: '30', keyint: 60 },
+  { tier: 4, name: '1080p', resolution: '1920x1080', bitrate: '4500',  fps: '30', keyint: 60 },
+  { tier: 5, name: '4K',    resolution: '3840x2160', bitrate: '15000', fps: '30', keyint: 60 },
+];
+
+function getMaxTier() {
+  const cores = os.cpus().length;
+  if (cores >= 4) return 5;
+  if (cores >= 2) return 4;
+  return 3;
+}
+
+function resolutionToTier(res) {
+  const map = { '3840x2160': 5, '1920x1080': 4, '1280x720': 3, '854x480': 2, '640x360': 1 };
+  return map[res] || 3;
+}
+
+function buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl, isRtmps }) {
+  const [w, h] = tier.resolution.split('x');
+  const scaleFilter = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`;
+  const fullVf = vfFilter ? `${scaleFilter},${vfFilter}` : scaleFilter;
+
+  const enc = [
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+    '-r', tier.fps, '-vf', fullVf,
+    '-b:v', `${tier.bitrate}k`, '-minrate', `${tier.bitrate}k`, '-maxrate', `${tier.bitrate}k`,
+    '-bufsize', `${parseInt(tier.bitrate) * 2}k`, '-nal-hrd', 'cbr', '-pix_fmt', 'yuv420p',
+    '-g', `${tier.keyint}`, '-keyint_min', `${tier.keyint}`, '-sc_threshold', '0',
+  ];
+
+  let args = [];
+  if (mergedVideo && mergedAudio) {
+    args = ['-re', '-stream_loop', '-1', '-i', mergedVideo, '-stream_loop', '-1', '-i', mergedAudio,
+      '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'copy',
+      '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+  } else if (mergedVideo) {
+    args = ['-re', '-stream_loop', '-1', '-i', mergedVideo,
+      '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+      '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'aac', '-b:a', '128k',
+      '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+  } else if (mergedAudio) {
+    args = ['-re', '-stream_loop', '-1', '-i', mergedAudio,
+      '-f', 'lavfi', '-i', `color=c=black:s=${w}x${h}:r=${tier.fps}`,
+      '-map', '1:v:0', '-map', '0:a:0', ...enc, '-c:a', 'copy',
+      '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+  }
+  args.push('-progress', 'pipe:2');
+  if (isRtmps) { args.push('-tls_verify', '0', '-f', 'flv', fullRtmpUrl); }
+  else { args.push('-f', 'flv', fullRtmpUrl); }
+  return args;
+}
+
+function attachFFmpegHandlers(proc, streamInfo, streamId) {
+  proc.stderr.on('data', data => {
+    const lines = data.toString().split('\n').filter(l => l.trim());
+    lines.forEach(line => {
+      streamInfo.logs.push(line);
+      if (streamInfo.logs.length > 300) streamInfo.logs.shift();
+      if (line.includes('frame=') || line.includes('speed=') || line.startsWith('progress=')) {
+        streamInfo.status = 'live';
+      }
+      const speedMatch = line.match(/speed=\s*([0-9.]+)x/);
+      if (speedMatch && streamInfo.adaptive) {
+        streamInfo.adaptive.lastSpeed = parseFloat(speedMatch[1]);
+      }
+      if ((line.toLowerCase().includes('connection refused') || line.toLowerCase().includes('error'))
+        && !line.includes('frame=') && !line.includes('bitrate=')) {
+        streamInfo.error = line;
+      }
+    });
+  });
+  proc.stdout.on('data', data => {
+    data.toString().split('\n').filter(l => l.trim()).forEach(l => streamInfo.logs.push(l));
+  });
+}
+
+async function restartStreamWithTier(streamId, newTierNum, reason) {
+  const stream = activeStreams.get(streamId);
+  if (!stream || !stream.config || stream.adaptive?.changing) return false;
+  const tier = QUALITY_TIERS.find(t => t.tier === newTierNum);
+  if (!tier) return false;
+
+  stream.adaptive.changing = true;
+  const oldTier = stream.adaptive.currentTier;
+  console.log(`[Adaptive ${streamId}] Tier ${oldTier} → ${newTierNum} (${tier.name})`);
+  stream.logs.push(`[Adaptive] Quality: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
+  dbLog('info', 'adaptive', `Stream ${streamId}: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
+
+  // Kill current process
+  try { if (stream.process && !stream.process.killed) stream.process.kill('SIGTERM'); } catch {}
+  await new Promise(r => {
+    const t = setTimeout(r, 1000);
+    const iv = setInterval(() => {
+      if (!stream.process || stream.process.killed || stream.process.exitCode !== null) {
+        clearInterval(iv); clearTimeout(t); r();
+      }
+    }, 50);
+  });
+
+  const { mergedVideo, mergedAudio, vfFilter, fullRtmpUrl, isRtmps, ffmpegBin } = stream.config;
+  const args = buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl, isRtmps });
+  const proc = spawn(ffmpegBin, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+
+  stream.process = proc;
+  stream.status = 'live';
+  stream.adaptive.currentTier = newTierNum;
+  stream.adaptive.lastTierChange = Date.now();
+  stream.adaptive.changing = false;
+  stream.adaptive.speedSamples = [];
+  stream.adaptive.stableSince = 0;
+  stream.adaptive.tierHistory.push({ time: new Date().toISOString(), from: oldTier, to: newTierNum, reason: reason || '' });
+
+  attachFFmpegHandlers(proc, stream, streamId);
+  proc.on('close', code => {
+    if (stream.process === proc && !stream.adaptive?.changing) {
+      if (code !== 0 && code !== 255) stream.error = `FFmpeg exited (code ${code})`;
+      stream.status = (code === 255 || stream.status === 'stopping') ? 'ended' : (code === 0 ? 'ended' : 'error');
+    }
+  });
+  proc.on('error', err => { if (stream.process === proc) { stream.error = err.message; stream.status = 'error'; } });
+
+  console.log(`[Adaptive ${streamId}] Restarted: ${tier.name} ${tier.bitrate}kbps, PID: ${proc.pid}`);
+  stream.logs.push(`[Adaptive] Now at ${tier.name} (${tier.bitrate}kbps)`);
+  return true;
+}
+
+function startAdaptiveMonitor(streamId) {
+  const POLL_INTERVAL = 5000;
+  const DOWNGRADE_THRESHOLD = 0.85;
+  const UPGRADE_THRESHOLD = 1.05;
+  const DOWNGRADE_SAMPLES = 3;   // 15 seconds of poor
+  const UPGRADE_STABLE_MS = 60000; // 60 seconds of good
+  const COOLDOWN_MS = 30000;
+
+  const iv = setInterval(() => {
+    const stream = activeStreams.get(streamId);
+    if (!stream || stream.status === 'ended' || stream.status === 'error' || stream.status === 'stopping') {
+      clearInterval(iv); return;
+    }
+    if (!stream.adaptive?.enabled || stream.adaptive.changing) return;
+    const speed = stream.adaptive.lastSpeed;
+    if (!speed || speed === 0) return;
+
+    const now = Date.now();
+    if (now - (stream.adaptive.lastTierChange || 0) < COOLDOWN_MS) return;
+
+    stream.adaptive.speedSamples.push(speed);
+    if (stream.adaptive.speedSamples.length > 12) stream.adaptive.speedSamples.shift();
+
+    const recent = stream.adaptive.speedSamples.slice(-DOWNGRADE_SAMPLES);
+    const avgRecent = recent.reduce((a, b) => a + b, 0) / recent.length;
+
+    // Downgrade: recent average below threshold
+    if (avgRecent < DOWNGRADE_THRESHOLD && recent.length >= DOWNGRADE_SAMPLES) {
+      const cur = stream.adaptive.currentTier;
+      if (cur > 1) {
+        restartStreamWithTier(streamId, cur - 1, `speed avg ${avgRecent.toFixed(2)}x < ${DOWNGRADE_THRESHOLD}`);
+      }
+      return;
+    }
+
+    // Upgrade: speed consistently good
+    if (avgRecent > UPGRADE_THRESHOLD) {
+      if (!stream.adaptive.stableSince) stream.adaptive.stableSince = now;
+      if (now - stream.adaptive.stableSince >= UPGRADE_STABLE_MS) {
+        const cur = stream.adaptive.currentTier;
+        const maxTier = stream.adaptive.maxTier || getMaxTier();
+        if (cur < maxTier) {
+          restartStreamWithTier(streamId, cur + 1, `speed avg ${avgRecent.toFixed(2)}x stable for 60s`);
+          stream.adaptive.stableSince = 0;
+        }
+      }
+    } else {
+      stream.adaptive.stableSince = 0;
+    }
+  }, POLL_INTERVAL);
+
+  return iv;
+}
+
 // ── Global Console Interceptor for Unified Logging ──
 const origLog = console.log;
 const origError = console.error;
@@ -858,7 +1042,7 @@ export const apiMiddleware = async (req, res, next) => {
             streamId, filePath: bodyFilePath, filename, playlistData,
             rtmpUrl, streamKey,
             bitrate = '2500', fps = '30', resolution = '1280x720',
-            loopVideo = false, sceneData = null
+            loopVideo = false, sceneData = null, adaptiveEnabled = false
           } = body;
 
           if (!streamId || !rtmpUrl || !streamKey) {
@@ -1094,50 +1278,41 @@ export const apiMiddleware = async (req, res, next) => {
           const proc = spawn(ffmpegBin, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
 
           const existingStream = activeStreams.get(streamId);
+          const initialTier = resolutionToTier(resolution);
           const streamInfo = {
             process: proc,
             startedAt: existingStream ? existingStream.startedAt : new Date().toISOString(),
-            status: 'starting', // wait until progress is detected
+            status: 'starting',
             logs: existingStream ? existingStream.logs : [],
             error: null,
             filePath: actualFilePath || mergedVideo || mergedAudio || 'playlist',
             rtmpUrl: fullRtmpUrl,
+            config: { mergedVideo, mergedAudio, vfFilter, fullRtmpUrl, isRtmps, ffmpegBin },
+            adaptive: {
+              enabled: !!adaptiveEnabled,
+              currentTier: initialTier,
+              maxTier: getMaxTier(),
+              lastSpeed: 0,
+              speedSamples: [],
+              stableSince: 0,
+              lastTierChange: 0,
+              changing: false,
+              tierHistory: [],
+              monitorInterval: null,
+            },
           };
 
-          console.log(`  FFmpeg PID: ${proc.pid || 'unknown'}`);
-          
-          let firstDataReceived = false;
+          console.log(`  FFmpeg PID: ${proc.pid || 'unknown'}, Adaptive: ${adaptiveEnabled ? 'ON' : 'OFF'}, Tier: ${initialTier}, MaxTier: ${streamInfo.adaptive.maxTier}`);
 
-          proc.stderr.on('data', data => {
-            const text = data.toString();
-            if (!firstDataReceived) {
-              firstDataReceived = true;
-              console.log(`  [FFmpeg first output] ${text.substring(0, 200)}`);
-            }
-            const lines = text.split('\n').filter(l => l.trim());
-            lines.forEach(line => {
-              streamInfo.logs.push(line);
-              if (streamInfo.logs.length > 300) streamInfo.logs.shift();
-              // Detect live status from both standard and -progress output
-              if (line.includes('frame=') || line.includes('speed=') || line.startsWith('progress=')) {
-                streamInfo.status = 'live';
-              }
-              if (line.toLowerCase().includes('connection refused') || line.toLowerCase().includes('invalid argument') || line.toLowerCase().includes('no such file') || line.toLowerCase().includes('error')) {
-                if (!line.includes('frame=') && !line.includes('bitrate=')) {
-                  streamInfo.error = line;
-                  dbLog('error', 'ffmpeg', `Error: ${line}`);
-                }
-              }
-            });
-          });
-
-          proc.stdout.on('data', data => {
-            data.toString().split('\n').filter(l => l.trim()).forEach(l => streamInfo.logs.push(l));
-          });
+          // Attach shared FFmpeg output handlers
+          attachFFmpegHandlers(proc, streamInfo, streamId);
 
           proc.on('close', code => {
+            // Skip cleanup if adaptive is restarting FFmpeg
+            if (streamInfo.adaptive?.changing) return;
+            if (streamInfo.process !== proc) return;
+
             console.log(`[Stream ${streamId}] FFmpeg exited with code ${code}`);
-            // Code 255 means SIGTERM (stream was manually stopped)
             if (code !== 0 && code !== 255 && !streamInfo.error) {
               streamInfo.error = `FFmpeg exited (code ${code}): ${streamInfo.logs.slice(-5).join(' | ')}`;
             }
@@ -1147,7 +1322,6 @@ export const apiMiddleware = async (req, res, next) => {
             } else {
               streamInfo.status = code === 0 ? 'ended' : 'error';
             }
-            // Update SQLite session
             try {
               const finalStatus = streamInfo.status;
               const lastLog = [...streamInfo.logs].reverse().find(l => l.includes('frame='));
@@ -1159,8 +1333,6 @@ export const apiMiddleware = async (req, res, next) => {
               getDb().prepare('UPDATE stream_sessions SET ended_at = datetime("now"), status = ?, total_frames = ?, peak_fps = ?, error_msg = ? WHERE stream_id = ? AND ended_at IS NULL').run(finalStatus, totalFrames, peakFps, streamInfo.error || null, streamId);
               dbLog('info', 'stream', `Stream ended: ${streamId} (code ${code})`);
             } catch {}
-            
-            // Clean up merged temporary files
             try {
               const mergedDir = path.join(UPLOAD_DIR, 'merged');
               const vPath = path.join(mergedDir, `${streamId}_video.mp4`);
@@ -1168,7 +1340,8 @@ export const apiMiddleware = async (req, res, next) => {
               if (fs.existsSync(vPath)) fs.unlinkSync(vPath);
               if (fs.existsSync(aPath)) fs.unlinkSync(aPath);
             } catch (err) { console.error('Cleanup error:', err); }
-
+            // Clear adaptive monitor
+            if (streamInfo.adaptive?.monitorInterval) clearInterval(streamInfo.adaptive.monitorInterval);
             setTimeout(() => activeStreams.delete(streamId), 60000);
           });
 
@@ -1179,6 +1352,12 @@ export const apiMiddleware = async (req, res, next) => {
           });
 
           activeStreams.set(streamId, streamInfo);
+
+          // Start adaptive quality monitor if enabled
+          if (adaptiveEnabled) {
+            streamInfo.adaptive.monitorInterval = startAdaptiveMonitor(streamId);
+            console.log(`[Stream ${streamId}] Adaptive monitor started (max tier: ${streamInfo.adaptive.maxTier})`);
+          }
 
             } catch (bgError) {
               console.error(`[Background Processing Error] Stream ${streamId} failed:`, bgError);
@@ -1257,6 +1436,7 @@ export const apiMiddleware = async (req, res, next) => {
             }
           }
 
+          const tierInfo = stream.adaptive ? QUALITY_TIERS.find(t => t.tier === stream.adaptive.currentTier) : null;
           return sendJSON(res, 200, {
             active: stream.status === 'live' || stream.status === 'starting',
             status: stream.status,
@@ -1264,6 +1444,17 @@ export const apiMiddleware = async (req, res, next) => {
             error: stream.error,
             progress,
             lastLogs: stream.logs.slice(-10),
+            adaptive: stream.adaptive ? {
+              enabled: stream.adaptive.enabled,
+              currentTier: stream.adaptive.currentTier,
+              tierName: tierInfo?.name || 'unknown',
+              tierResolution: tierInfo?.resolution || '',
+              tierBitrate: tierInfo?.bitrate || '',
+              maxTier: stream.adaptive.maxTier,
+              speed: stream.adaptive.lastSpeed || 0,
+              changing: stream.adaptive.changing,
+              tierHistory: stream.adaptive.tierHistory.slice(-10),
+            } : null,
           });
         }
 
@@ -1282,6 +1473,46 @@ export const apiMiddleware = async (req, res, next) => {
             streams.push({ streamId: id, status: info.status, startedAt: info.startedAt, error: info.error });
           });
           return sendJSON(res, 200, { streams });
+        }
+
+        // ── Adaptive quality control ──
+        if (url === '/api/stream/adaptive' && req.method === 'POST') {
+          const { streamId, enabled, manualTier } = await readBody(req);
+          if (!streamId) return sendJSON(res, 400, { error: 'streamId required' });
+          const stream = activeStreams.get(streamId);
+          if (!stream) return sendJSON(res, 404, { error: 'Stream not found' });
+          if (!stream.adaptive) return sendJSON(res, 400, { error: 'Stream has no adaptive state' });
+
+          if (typeof enabled === 'boolean') {
+            stream.adaptive.enabled = enabled;
+            if (enabled && !stream.adaptive.monitorInterval) {
+              stream.adaptive.monitorInterval = startAdaptiveMonitor(streamId);
+            }
+            if (!enabled && stream.adaptive.monitorInterval) {
+              clearInterval(stream.adaptive.monitorInterval);
+              stream.adaptive.monitorInterval = null;
+            }
+            console.log(`[Adaptive ${streamId}] ${enabled ? 'Enabled' : 'Disabled'}`);
+          }
+
+          if (typeof manualTier === 'number' && manualTier >= 1 && manualTier <= 5) {
+            const maxT = stream.adaptive.maxTier || getMaxTier();
+            const clampedTier = Math.min(manualTier, maxT);
+            if (clampedTier !== stream.adaptive.currentTier) {
+              await restartStreamWithTier(streamId, clampedTier, `manual set to tier ${clampedTier}`);
+            }
+          }
+
+          const tierInfo = QUALITY_TIERS.find(t => t.tier === stream.adaptive.currentTier);
+          return sendJSON(res, 200, {
+            success: true,
+            adaptive: {
+              enabled: stream.adaptive.enabled,
+              currentTier: stream.adaptive.currentTier,
+              tierName: tierInfo?.name || 'unknown',
+              maxTier: stream.adaptive.maxTier,
+            },
+          });
         }
 
         // ── YouTube OAuth: exchange code for token + fetch channel info ──

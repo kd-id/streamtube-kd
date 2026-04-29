@@ -290,6 +290,7 @@ export default function Streams() {
       resolution: stream.resolution || '1280x720',
       loopVideo: stream.loopVideo || false,
       sceneData: sceneData ? sceneData.items : null,
+      adaptiveEnabled: stream.adaptiveEnabled || false,
     });
 
     if (backendResult && !backendResult.success) {
@@ -478,6 +479,63 @@ export default function Streams() {
               <div className="hpm-bar"><div className="hpm-bar-fill" style={{ width: `${systemStats?.cpuPercent || 0}%`, background: '#a855f7' }} /></div>
             </div>
           </div>
+
+          {/* Adaptive Quality Panel */}
+          {realStreamStatus?.adaptive && (
+            <div className="hpm-adaptive">
+              <div className="hpm-adaptive-header">
+                <div className="hpm-adaptive-title">
+                  <Gauge size={14} />
+                  <span>Adaptive Quality</span>
+                  <span className={`hpm-adaptive-mode ${realStreamStatus.adaptive.enabled ? 'auto' : 'manual'}`}>
+                    {realStreamStatus.adaptive.enabled ? '🤖 Auto' : '🔧 Manual'}
+                  </span>
+                </div>
+                <div className="hpm-adaptive-controls">
+                  <button
+                    className="hpm-tier-btn"
+                    disabled={realStreamStatus.adaptive.currentTier <= 1 || realStreamStatus.adaptive.changing}
+                    onClick={() => fetch('/api/stream/adaptive', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: healthId, manualTier: realStreamStatus.adaptive.currentTier - 1 }) })}
+                  >▼</button>
+                  <span className={`hpm-tier-badge tier-${realStreamStatus.adaptive.currentTier}`}>
+                    Tier {realStreamStatus.adaptive.currentTier} — {realStreamStatus.adaptive.tierName}
+                    {realStreamStatus.adaptive.tierBitrate && ` (${realStreamStatus.adaptive.tierBitrate}kbps)`}
+                  </span>
+                  <button
+                    className="hpm-tier-btn"
+                    disabled={realStreamStatus.adaptive.currentTier >= realStreamStatus.adaptive.maxTier || realStreamStatus.adaptive.changing}
+                    onClick={() => fetch('/api/stream/adaptive', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: healthId, manualTier: realStreamStatus.adaptive.currentTier + 1 }) })}
+                  >▲</button>
+                </div>
+              </div>
+              <div className="hpm-adaptive-info">
+                <div className="hpm-adaptive-speed">
+                  <span>Speed:</span>
+                  <span className={`hpm-speed-value ${realStreamStatus.adaptive.speed >= 1 ? 'good' : realStreamStatus.adaptive.speed >= 0.85 ? 'warn' : 'bad'}`}>
+                    {realStreamStatus.adaptive.speed ? realStreamStatus.adaptive.speed.toFixed(2) + 'x' : '--'}
+                    {realStreamStatus.adaptive.speed >= 1 ? ' ✅' : realStreamStatus.adaptive.speed >= 0.85 ? ' ⚠️' : realStreamStatus.adaptive.speed > 0 ? ' 🔴' : ''}
+                  </span>
+                  <span style={{fontSize:'11px',color:'var(--text-muted)',marginLeft:'8px'}}>Max: Tier {realStreamStatus.adaptive.maxTier}</span>
+                  {realStreamStatus.adaptive.changing && <span className="hpm-tier-changing">⏳ Changing...</span>}
+                </div>
+                <button
+                  className={`hpm-adaptive-toggle ${realStreamStatus.adaptive.enabled ? 'on' : 'off'}`}
+                  onClick={() => fetch('/api/stream/adaptive', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: healthId, enabled: !realStreamStatus.adaptive.enabled }) }).then(() => {})}
+                >
+                  {realStreamStatus.adaptive.enabled ? 'Disable Auto' : 'Enable Auto'}
+                </button>
+              </div>
+              {realStreamStatus.adaptive.tierHistory?.length > 0 && (
+                <div className="hpm-tier-history">
+                  {realStreamStatus.adaptive.tierHistory.slice(-3).map((h, i) => (
+                    <span key={i} className="hpm-tier-event">
+                      {new Date(h.time).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'})} Tier {h.from}→{h.to} ({h.reason})
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           
           <div className="hpm-ffmpeg">
             <div className="hpm-ffmpeg-label"><Terminal size={12} /> FFmpeg Command & Output — {realStreamStatus?.status || 'offline'}
@@ -692,6 +750,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [endAt, setEndAt] = useState('');
   const [enableMonetization, setEnableMonetization] = useState(false);
   const [loopVideo, setLoopVideo] = useState(false);
+  const [adaptiveEnabled, setAdaptiveEnabled] = useState(false);
   const [advancedSettings, setAdvancedSettings] = useState(false);
   const [resolution, setResolution] = useState('1280x720');
   const [bitrate, setBitrate] = useState('2500');
@@ -756,6 +815,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setRtmpUrl(existing.rtmpUrl || PLATFORMS[0].rtmp);
       setStreamKey(existing.streamKey || '');
       setLoopVideo(existing.loopVideo || false);
+      setAdaptiveEnabled(existing.adaptiveEnabled || false);
       setSelectedSceneId(existing.selectedSceneId || '');
       
       const hasAdvChanges = existing.resolution && (existing.resolution !== '1280x720' || existing.bitrate !== '2500' || existing.fps !== '30' || existing.orientation !== 'landscape');
@@ -780,7 +840,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
     setEnableSchedule(false); setScheduledAt(''); setEndAt('');
     setEnableMonetization(false); setSelectedMedia(null);
     setPlatform('youtube'); setRtmpUrl(PLATFORMS[0].rtmp);
-    setStreamKey(''); setLoopVideo(false); setAdvancedSettings(false);
+    setStreamKey(''); setLoopVideo(false); setAdaptiveEnabled(false); setAdvancedSettings(false);
     setVideoSearch(''); setOrientation('landscape'); setSelectedSceneId('');
   };
 
@@ -943,7 +1003,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
           title: title.trim(), description, privacy, category, tags, channelId, 
           thumbnailUrl: thumbnailServerUrl || thumbnailUrl, thumbnailBase64,
           scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
-          enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia,
+          enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled,
           platform: 'youtube',
           rtmpUrl: result.rtmpUrl,
           streamKey: result.streamKey,
@@ -968,7 +1028,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       title: title.trim(), description, privacy, category, tags, channelId, 
       thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
       scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
-      enableMonetization, mode: tab, resolution, bitrate, fps, selectedMedia,
+      enableMonetization, mode: tab, resolution, bitrate, fps, selectedMedia, adaptiveEnabled,
       platform, rtmpUrl, streamKey, loopVideo, orientation, selectedSceneId,
     };
     if (editId) updateStream(editId, data);
@@ -1182,6 +1242,19 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                       </div>
                       <label className="switch">
                         <input type="checkbox" checked={loopVideo} onChange={e => setLoopVideo(e.target.checked)} />
+                        <span className="switch-slider" />
+                      </label>
+                    </div>
+                    <div className="csm-toggle-item compact">
+                      <div className="csm-toggle-left">
+                        <Gauge size={14} />
+                        <span>Adaptive Quality</span>
+                        <span style={{ fontSize: '11px', color: adaptiveEnabled ? '#60a5fa' : 'var(--text-muted)', marginLeft: 6 }}>
+                          ({adaptiveEnabled ? 'Auto — adjusts resolution/bitrate automatically' : 'Manual'})
+                        </span>
+                      </div>
+                      <label className="switch">
+                        <input type="checkbox" checked={adaptiveEnabled} onChange={e => setAdaptiveEnabled(e.target.checked)} />
                         <span className="switch-slider" />
                       </label>
                     </div>
@@ -1573,6 +1646,19 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                         </div>
                         <label className="switch">
                           <input type="checkbox" checked={loopVideo} onChange={e => setLoopVideo(e.target.checked)} />
+                          <span className="switch-slider" />
+                        </label>
+                      </div>
+                      <div className="csm-toggle-item compact">
+                        <div className="csm-toggle-left">
+                          <Gauge size={14} />
+                          <span>Adaptive Quality</span>
+                          <span style={{ fontSize: '11px', color: adaptiveEnabled ? '#60a5fa' : 'var(--text-muted)', marginLeft: 6 }}>
+                            ({adaptiveEnabled ? 'Auto' : 'Manual'})
+                          </span>
+                        </div>
+                        <label className="switch">
+                          <input type="checkbox" checked={adaptiveEnabled} onChange={e => setAdaptiveEnabled(e.target.checked)} />
                           <span className="switch-slider" />
                         </label>
                       </div>
