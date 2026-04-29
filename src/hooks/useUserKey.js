@@ -49,7 +49,17 @@ export function writeUserData(baseKey, value) {
       keepalive: true
     }).catch(err => console.error('Failed to sync user data', err));
     // Track pending writes
-    if (!window.__pendingWrites) window.__pendingWrites = [];
+    if (!window.__pendingWrites) {
+      window.__pendingWrites = [];
+      // Warn user if they try to close/refresh while saving
+      window.addEventListener('beforeunload', (e) => {
+        if (window.__pendingWrites && window.__pendingWrites.length > 0) {
+          e.preventDefault();
+          e.returnValue = 'Menyimpan data... Yakin ingin keluar?';
+          return e.returnValue;
+        }
+      });
+    }
     window.__pendingWrites.push(promise);
     promise.finally(() => {
       if (window.__pendingWrites) {
@@ -70,7 +80,8 @@ export async function syncUserDataFromServer(token) {
   
   try {
     const res = await fetch('/api/userdata', {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
     });
     const data = await res.json();
     if (data.success && data.data) {
