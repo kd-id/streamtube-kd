@@ -4,7 +4,7 @@ import {
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
   RefreshCw, Lock, Mail, LogOut, Bot, Server, Key, BrainCircuit,
   Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap, X,
-  CheckCircle, AlertCircle, Wifi
+  CheckCircle, AlertCircle, Wifi, Terminal, Code, ArrowRight
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useYouTube } from '../hooks/useYouTubeStore';
