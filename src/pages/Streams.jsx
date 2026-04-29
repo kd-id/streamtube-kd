@@ -51,19 +51,28 @@ const PLATFORMS = [
 
 /* ─── Resolution presets ─── */
 const RESOLUTIONS = [
-  { value: '1920x1080', label: '1080p Full HD', desc: '1920×1080 (1080p Full HD)' },
-  { value: '1280x720',  label: '720p HD',       desc: '1280×720 (720p HD)' },
-  { value: '854x480',   label: '480p SD',       desc: '854×480 (480p SD)' },
-  { value: '640x360',   label: '360p',          desc: '640×360 (360p)' },
+  { value: '1920x1080', label: '1080p Full HD', desc: '1920×1080 (1080p Full HD) — Butuh VPS 2+ core' },
+  { value: '1280x720',  label: '720p HD ⭐',    desc: '1280×720 (720p HD) — Optimal untuk VPS 1 core' },
+  { value: '854x480',   label: '480p SD',       desc: '854×480 (480p SD) — Ringan, cocok untuk audio stream' },
+  { value: '640x360',   label: '360p',          desc: '640×360 (360p) — Paling ringan' },
 ];
 
+/* ─── YouTube recommended bitrate per resolution ─── */
+const RECOMMENDED_BITRATE = {
+  '1920x1080': '4500',
+  '1280x720':  '2500',
+  '854x480':   '1000',
+  '640x360':   '600',
+};
+
 const BITRATES = [
-  { value: '6000', label: '6000 kbps' },
-  { value: '4500', label: '4500 kbps' },
-  { value: '4000', label: '4000 kbps' },
-  { value: '2500', label: '2500 kbps' },
-  { value: '1500', label: '1500 kbps' },
-  { value: '1000', label: '1000 kbps' },
+  { value: '6000', label: '6000 kbps (1080p60)' },
+  { value: '4500', label: '4500 kbps (1080p30)' },
+  { value: '4000', label: '4000 kbps (720p60)' },
+  { value: '2500', label: '2500 kbps (720p30) ⭐' },
+  { value: '1500', label: '1500 kbps (480p)' },
+  { value: '1000', label: '1000 kbps (480p ringan)' },
+  { value: '600',  label: '600 kbps (360p)' },
 ];
 
 const FPS_OPTIONS = [
@@ -234,6 +243,8 @@ export default function Streams() {
             category: stream.category,
             tags: stream.tags || [],
             thumbnailBase64: stream.thumbnailBase64 || null,
+            streamResolution: stream.resolution || '1280x720',
+            streamFps: stream.fps || '30',
           }),
         });
         const bcast = await res.json();
@@ -1356,7 +1367,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                     <div className="csm-row">
                       <div className="form-group">
                         <label className="form-label">Resolution</label>
-                        <select className="form-input" value={resolution} onChange={e => setResolution(e.target.value)}>
+                        <select className="form-input" value={resolution} onChange={e => { setResolution(e.target.value); setBitrate(RECOMMENDED_BITRATE[e.target.value] || '2500'); }}>
                           {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                         </select>
                       </div>
@@ -1533,7 +1544,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                     <div className="csm-row">
                       <div className="form-group">
                         <label className="form-label">Resolution</label>
-                        <select className="form-input" value={resolution} onChange={e => setResolution(e.target.value)}>
+                        <select className="form-input" value={resolution} onChange={e => { setResolution(e.target.value); setBitrate(RECOMMENDED_BITRATE[e.target.value] || '2500'); }}>
                           {RESOLUTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                         </select>
                       </div>

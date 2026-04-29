@@ -1397,11 +1397,16 @@ export const apiMiddleware = async (req, res, next) => {
         // ── YouTube Live Broadcast: auto-create stream key ──
         if (url === '/api/youtube/broadcast' && req.method === 'POST') {
           const body = await readBody(req);
-          const { accessToken, title, description, privacy, scheduledStartTime, category, tags, thumbnailBase64 } = body;
+          const { accessToken, title, description, privacy, scheduledStartTime, category, tags, thumbnailBase64, streamResolution, streamFps } = body;
 
           if (!accessToken) {
             return sendJSON(res, 400, { error: 'accessToken is required. Connect a YouTube channel first.' });
           }
+
+          // Map our resolution format (e.g. '1280x720') to YouTube CDN format (e.g. '720p')
+          const resMap = { '1920x1080': '1080p', '1280x720': '720p', '854x480': '480p', '640x360': '360p' };
+          const ytResolution = resMap[streamResolution] || '720p';
+          const ytFrameRate = streamFps === '60' ? '60fps' : '30fps';
 
           try {
             const headers = {
@@ -1468,13 +1473,13 @@ export const apiMiddleware = async (req, res, next) => {
               console.warn('[YouTube Broadcast] Failed to update category/tags:', videoErr.message);
             }
 
-            // 3) Create liveStream
+            // 3) Create liveStream — tell YouTube the ACTUAL resolution & fps we will send
             const streamBody = {
               snippet: { title: `${title || 'Stream'} - ingestion` },
               cdn: {
-                frameRate: 'variable',
+                frameRate: ytFrameRate,
                 ingestionType: 'rtmp',
-                resolution: 'variable',
+                resolution: ytResolution,
               },
             };
 
