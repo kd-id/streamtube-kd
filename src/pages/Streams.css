@@ -368,6 +368,11 @@
 .csm-thumb-empty small { font-size: 10px; opacity: 0.6; }
 .csm-thumb-overlay-action { position: absolute; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0; transition: opacity var(--transition-fast); }
 .csm-thumb:hover .csm-thumb-overlay-action { opacity: 1; }
+.csm-thumb-icon-btn { width: 32px; height: 32px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(8px); background: rgba(255,255,255,0.2); color: #fff; transition: all 0.15s ease; }
+.csm-thumb-icon-btn:hover { background: rgba(255,255,255,0.35); transform: scale(1.1); }
+.csm-thumb-icon-btn.remove { background: rgba(239,68,68,0.4); }
+.csm-thumb-icon-btn.remove:hover { background: rgba(239,68,68,0.7); }
+@media (max-width: 768px) { .csm-thumb-icon-btn { width: 28px; height: 28px; } .csm-thumb-icon-btn svg { width: 12px; height: 12px; } }
 
 .csm-thumb-actions { display: flex; gap: 8px; margin-top: 10px; }
 .btn-secondary { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: var(--radius-sm); font-size: 11px; cursor: pointer; transition: all var(--transition-fast); }

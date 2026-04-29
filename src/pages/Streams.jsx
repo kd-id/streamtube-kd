@@ -4,7 +4,7 @@ import {
   Wifi, Gauge, MonitorPlay, AlertTriangle, Users, ExternalLink,
   Image as ImageIcon, Clock, DollarSign, Tag, ChevronDown, Film,
   Music, ListMusic, Terminal, Link2, Key, Copy, Check, RefreshCw, RotateCcw,
-  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2
+  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid
 } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import ShareModal from '../components/ShareModal';
@@ -1343,9 +1343,9 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                         <>
                           <img src={thumbnailUrl} alt="" className="csm-thumb-img" />
                           <div className="csm-thumb-overlay-action">
-                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><ImageIcon size={12} /> Upload</button>
-                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><ImageIcon size={12} /> Gallery</button>
-                            <button className="btn-action stop" onClick={handleRemoveThumbnail}><X size={12} /> Remove</button>
+                            <button className="csm-thumb-icon-btn" title="Upload" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><Upload size={14} /></button>
+                            <button className="csm-thumb-icon-btn" title="Gallery" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><LayoutGrid size={14} /></button>
+                            <button className="csm-thumb-icon-btn remove" title="Remove" onClick={handleRemoveThumbnail}><Trash2 size={14} /></button>
                           </div>
                         </>
                       ) : (
@@ -1353,7 +1353,8 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                           <>
                             <img src={`/api/video/thumbnail/${encodeURIComponent(selectedMedia.serverFilename)}`} alt="" className="csm-thumb-img" onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerHTML='<div class="csm-thumb-empty"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Click to upload</span><small>1280×720</small></div>'; }} />
                             <div className="csm-thumb-overlay-action">
-                              <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><ImageIcon size={12} /> Upload Custom</button>
+                              <button className="csm-thumb-icon-btn" title="Upload" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><Upload size={14} /></button>
+                              <button className="csm-thumb-icon-btn" title="Gallery" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><LayoutGrid size={14} /></button>
                             </div>
                           </>
                         ) : (
@@ -1520,38 +1521,28 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                   <div className="form-group csm-thumb-group">
                     <label className="form-label">Thumbnail</label>
                   <div className="csm-thumb-container">
-                    <div className="csm-thumb" onClick={() => { if (!thumbnailUrl && !selectedMedia?.serverFilename) document.getElementById('csm-thumb-input-api')?.click(); }}>
+                    <div className="csm-thumb" onClick={() => { if (!thumbnailUrl) document.getElementById('csm-thumb-input-api')?.click(); }}>
                       {thumbnailUrl ? (
                         <>
                           <img src={thumbnailUrl} alt="" className="csm-thumb-img" />
                           <div className="csm-thumb-overlay-action">
-                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}><ImageIcon size={12} /> Upload</button>
-                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><ImageIcon size={12} /> Gallery</button>
-                            <button className="btn-action stop" onClick={handleRemoveThumbnail}><X size={12} /> Remove</button>
+                            <button className="csm-thumb-icon-btn" title="Upload" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}><Upload size={14} /></button>
+                            <button className="csm-thumb-icon-btn" title="Gallery" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><LayoutGrid size={14} /></button>
+                            <button className="csm-thumb-icon-btn remove" title="Remove" onClick={handleRemoveThumbnail}><Trash2 size={14} /></button>
                           </div>
                         </>
                       ) : (
-                        selectedMedia?.serverFilename ? (
-                          <>
-                            <img src={`/api/video/thumbnail/${encodeURIComponent(selectedMedia.serverFilename)}`} alt="" className="csm-thumb-img" onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerHTML='<div class="csm-thumb-empty"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Click to upload</span><small>1280×720</small></div>'; }} />
-                            <div className="csm-thumb-overlay-action">
-                              <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}><ImageIcon size={12} /> Upload Custom</button>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="csm-thumb-empty">
-                            <ImageIcon size={20} strokeWidth={1} />
-                            <span>Select Thumbnail</span>
-                            <small>1280×720 (Max 2MB)</small>
-                            <div className="csm-thumb-actions">
-                              <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}>Upload File</button>
-                              <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}>From Gallery</button>
-                            </div>
+                        <div className="csm-thumb-empty">
+                          <ImageIcon size={20} strokeWidth={1} />
+                          <span>Select Thumbnail</span>
+                          <small>1280×720 (Max 2MB)</small>
+                          <div className="csm-thumb-actions">
+                            <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}>Upload File</button>
+                            <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}>From Gallery</button>
                           </div>
-                        )
+                        </div>
                       )}
-                      {thumbnailUrl && !selectedMedia?.serverFilename && <input id="csm-thumb-input-api" type="file" accept="image/*" hidden onChange={handleThumbnail} />}
-                      {(!thumbnailUrl || selectedMedia?.serverFilename) && <input id="csm-thumb-input-api" type="file" accept="image/*" hidden onChange={handleThumbnail} />}
+                      <input id="csm-thumb-input-api" type="file" accept="image/*" hidden onChange={handleThumbnail} />
                     </div>
                     {showThumbGallery && (
                       <div className="csm-thumb-gallery-dropdown">
