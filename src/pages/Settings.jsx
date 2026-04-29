@@ -3,7 +3,7 @@ import {
   User, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
   RefreshCw, Lock, Mail, LogOut, Bot, Server, Key, BrainCircuit,
-  Unlink
+  Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useYouTube } from '../hooks/useYouTubeStore';
@@ -464,16 +464,52 @@ function AboutTab() {
   );
 }
 /* ─── AI Assistants Tab ─── */
+const AI_PROVIDERS = [
+  { id: 'gemini', name: 'Google Gemini', icon: <Sparkles size={14}/>, color: '#1a73e8', defaultBase: '' },
+  { id: 'openai', name: 'OpenAI (ChatGPT)', icon: <BrainCircuit size={14}/>, color: '#10a37f', defaultBase: 'https://api.openai.com/v1' },
+  { id: 'anthropic', name: 'Anthropic (Claude)', icon: <Zap size={14}/>, color: '#d97757', defaultBase: 'https://api.anthropic.com/v1' },
+  { id: 'grok', name: 'Grok (xAI)', icon: <X size={14}/>, color: '#ffffff', defaultBase: 'https://api.x.ai/v1' },
+  { id: 'groq', name: 'Groq', icon: <Cpu size={14}/>, color: '#f55036', defaultBase: 'https://api.groq.com/openai/v1' },
+  { id: 'openrouter', name: 'OpenRouter', icon: <Network size={14}/>, color: '#3b82f6', defaultBase: 'https://openrouter.ai/api/v1' },
+  { id: 'custom', name: 'Custom Endpoint', icon: <Server size={14}/>, color: '#8b5cf6', defaultBase: '' },
+];
+
+const AI_MODELS = {
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+  anthropic: ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
+  grok: ['grok-2', 'grok-2-mini'],
+  groq: ['llama3-8b-8192', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma-7b-it'],
+  openrouter: ['google/gemini-2.5-flash', 'openai/gpt-4o', 'anthropic/claude-3-opus', 'meta-llama/llama-3-70b-instruct'],
+  custom: []
+};
+
 function AITab() {
   const { config, updateConfig } = useAIStore();
-  const [provider, setProvider] = useState(config.provider);
-  const [apiKey, setApiKey] = useState(config.apiKey);
-  const [modelName, setModelName] = useState(config.modelName);
-  const [baseUrl, setBaseUrl] = useState(config.baseUrl);
+  const [provider, setProvider] = useState(config.provider || 'gemini');
+  const [apiKey, setApiKey] = useState(config.apiKey || '');
+  const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
+  const [baseUrl, setBaseUrl] = useState(config.baseUrl || '');
+  
   const [saved, setSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
 
+  const [showProvDrop, setShowProvDrop] = useState(false);
+  const [showModDrop, setShowModDrop] = useState(false);
+  const [modSearch, setModSearch] = useState('');
+
+  const activeProvider = AI_PROVIDERS.find(p => p.id === provider) || AI_PROVIDERS[0];
+  const modelOptions = AI_MODELS[provider] || [];
+  const filteredModels = modelOptions.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
+
   const isDirty = provider !== config.provider || apiKey !== config.apiKey || modelName !== config.modelName || baseUrl !== config.baseUrl;
+
+  const handleProviderSelect = (prov) => {
+    setProvider(prov.id);
+    setBaseUrl(prov.defaultBase);
+    setModelName(AI_MODELS[prov.id]?.[0] || '');
+    setShowProvDrop(false);
+  };
 
   const handleSave = () => {
     updateConfig({ provider, apiKey: apiKey.trim(), modelName: modelName.trim(), baseUrl: baseUrl.trim() });
@@ -492,12 +528,112 @@ function AITab() {
           Konfigurasi API untuk fitur Auto-Generate (Judul, Deskripsi, Tags) otomatis di menu Streams.
         </p>
 
-        <div className="form-group">
+        {/* AI Provider Dropdown */}
+        <div className="form-group" style={{ position: 'relative' }}>
           <label className="form-label"><Server size={14} /> AI Provider</label>
-          <select className="form-input" value={provider} onChange={e => setProvider(e.target.value)}>
-            <option value="gemini">Google Gemini</option>
-            <option value="openai">OpenAI / Custom Endpoint (Groq, Together, dll)</option>
-          </select>
+          <div className="csm-rtmp-field" style={{ position: 'relative' }}>
+            <button
+              className="form-input"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)', cursor: 'pointer', textAlign: 'left', border: `1px solid ${activeProvider.color}44` }}
+              onClick={() => setShowProvDrop(!showProvDrop)}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: activeProvider.color, display: 'flex', alignItems: 'center' }}>{activeProvider.icon}</span>
+                <span>{activeProvider.name}</span>
+              </div>
+              {showProvDrop ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {showProvDrop && (
+              <div className="csm-platform-dropdown-v2" style={{ top: 'calc(100% + 4px)', left: 0, right: 0, width: '100%', maxHeight: '250px', overflowY: 'auto' }}>
+                {AI_PROVIDERS.map(p => (
+                  <button
+                    key={p.id}
+                    className={`csm-pd-item ${provider === p.id ? 'active' : ''}`}
+                    onClick={() => handleProviderSelect(p)}
+                  >
+                    <span className="csm-pd-icon" style={{ background: p.color + '22', color: p.color }}>
+                      {p.icon}
+                    </span>
+                    <span className="csm-pd-label">{p.name}</span>
+                    {provider === p.id && <span className="csm-pd-check">✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Custom Base URL (shown only if needed) */}
+        {(provider === 'custom' || provider === 'openai' || provider === 'groq' || provider === 'grok' || provider === 'openrouter' || provider === 'anthropic') && (
+          <div className="form-group">
+            <label className="form-label"><Link2 size={14} /> {provider === 'custom' ? 'Custom Endpoint URL' : 'API Base URL'}</label>
+            <input
+              className="form-input"
+              type="text"
+              value={baseUrl}
+              onChange={e => setBaseUrl(e.target.value)}
+              placeholder="https://api.example.com/v1"
+            />
+          </div>
+        )}
+
+        {/* Model Selection Dropdown */}
+        <div className="form-group" style={{ position: 'relative' }}>
+          <label className="form-label"><BrainCircuit size={14} /> {provider === 'custom' ? 'Custom Model Name' : 'Model'}</label>
+          
+          {provider === 'custom' ? (
+            <input
+              className="form-input"
+              type="text"
+              value={modelName}
+              onChange={e => setModelName(e.target.value)}
+              placeholder="model-name"
+            />
+          ) : (
+            <div className="csm-rtmp-field" style={{ position: 'relative' }}>
+              <button
+                className="form-input"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)', cursor: 'pointer', textAlign: 'left' }}
+                onClick={() => { setShowModDrop(!showModDrop); setModSearch(''); }}
+              >
+                <span>{modelName || 'Select a model...'}</span>
+                {showModDrop ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+              
+              {showModDrop && (
+                <div className="csm-platform-dropdown-v2" style={{ top: 'calc(100% + 4px)', left: 0, right: 0, width: '100%', padding: '0', overflow: 'hidden' }}>
+                  <div style={{ padding: '8px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Search size={14} style={{ color: 'var(--text-muted)' }} />
+                    <input 
+                      type="text" 
+                      placeholder="Search model..." 
+                      value={modSearch} 
+                      onChange={e => setModSearch(e.target.value)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-color)', width: '100%', outline: 'none', fontSize: '13px' }}
+                      autoFocus
+                    />
+                  </div>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    {filteredModels.length === 0 ? (
+                      <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>Model not found.</div>
+                    ) : (
+                      filteredModels.map(m => (
+                        <button
+                          key={m}
+                          className={`csm-pd-item ${modelName === m ? 'active' : ''}`}
+                          onClick={() => { setModelName(m); setShowModDrop(false); }}
+                          style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)22' }}
+                        >
+                          <span className="csm-pd-label">{m}</span>
+                          {modelName === m && <span className="csm-pd-check">✓</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="form-group">
@@ -508,7 +644,7 @@ function AITab() {
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
-              placeholder={`Masukkan rahasia API Key ${provider === 'gemini' ? 'Gemini' : 'OpenAI'}`}
+              placeholder="Enter your API key"
             />
             <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
               {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -516,32 +652,8 @@ function AITab() {
           </div>
         </div>
 
-        <div className="form-group">
-          <label className="form-label"><BrainCircuit size={14} /> Model Name</label>
-          <input
-            className="form-input"
-            type="text"
-            value={modelName}
-            onChange={e => setModelName(e.target.value)}
-            placeholder={provider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o'}
-          />
-        </div>
-
-        {provider === 'openai' && (
-          <div className="form-group">
-            <label className="form-label"><Link2 size={14} /> Base URL</label>
-            <input
-              className="form-input"
-              type="text"
-              value={baseUrl}
-              onChange={e => setBaseUrl(e.target.value)}
-              placeholder="https://api.openai.com/v1"
-            />
-          </div>
-        )}
-
-        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved}>
-          {saved ? <><Check size={15} /> Tersimpan!</> : <><Save size={15} /> Simpan Konfigurasi</>}
+        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved} style={{ marginTop: '16px' }}>
+          {saved ? <><Check size={15} /> Tersimpan!</> : <><Save size={15} /> Save</>}
         </button>
       </div>
     </div>

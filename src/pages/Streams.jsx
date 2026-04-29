@@ -4,7 +4,7 @@ import {
   Wifi, Gauge, MonitorPlay, AlertTriangle, Users, ExternalLink,
   Image as ImageIcon, Clock, DollarSign, Tag, ChevronDown, Film,
   Music, ListMusic, Terminal, Link2, Key, Copy, Check, RefreshCw, RotateCcw,
-  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid
+  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2
 } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import ShareModal from '../components/ShareModal';
@@ -13,6 +13,7 @@ import { useYouTube } from '../hooks/useYouTubeStore';
 import { useMedia } from '../hooks/useMediaStore';
 import { usePlaylist } from '../hooks/usePlaylistStore';
 import { useOverlay } from '../hooks/useOverlayStore';
+import { useAIStore } from '../hooks/useAIStore';
 import { categories } from '../data/mockData';
 import { streamApi } from '../services/streamApi';
 import { logService, LOG_CATEGORIES } from '../services/logService';
@@ -758,8 +759,44 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
 
   // RTMP multi-platform
   const [platform, setPlatform] = useState('youtube');
-  const [rtmpUrl, setRtmpUrl] = useState(PLATFORMS[0].rtmp);
+  const [rtmpUrl, setRtmpUrl] = useState('rtmp://a.rtmp.youtube.com/live2');
   const [streamKey, setStreamKey] = useState('');
+  
+  const { config: aiConfig, generateText } = useAIStore();
+  const [generatingField, setGeneratingField] = useState(null);
+
+  const handleGenerate = async (field) => {
+    try {
+      if (!aiConfig.apiKey) {
+        alert('API Key AI belum diatur. Silakan atur di Settings > AI Assistants.');
+        return;
+      }
+      setGeneratingField(field);
+      
+      const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
+      let prompt = '';
+      if (field === 'title') {
+        prompt = `Buatkan 1 judul YouTube live stream yang sangat menarik, clickbait tapi tetap relevan, tentang "${context}". Maksimal 60 karakter. Jangan gunakan tanda kutip di awal/akhir. Berikan langsung judulnya tanpa pengantar.`;
+      } else if (field === 'description') {
+        prompt = `Buatkan deskripsi YouTube live stream yang profesional, SEO friendly, dan menarik tentang "${context}". Sertakan ajakan untuk subscribe dan like. Maksimal 3 paragraf pendek. Berikan langsung hasilnya tanpa pengantar.`;
+      } else if (field === 'tags') {
+        prompt = `Berikan 10-15 tag YouTube yang relevan, populer, dan SEO friendly untuk video tentang "${context}". Pisahkan dengan koma. Contoh: tag1, tag2, tag3. Jangan berikan teks lain selain tag.`;
+      }
+
+      const result = await generateText(prompt);
+      
+      if (field === 'title') setTitle(result.replace(/^["']|["']$/g, '').trim());
+      else if (field === 'description') setDescription(result.trim());
+      else if (field === 'tags') {
+        const newTags = result.split(',').map(t => t.trim()).filter(t => t);
+        setTags(newTags.slice(0, 15)); // Limit to 15 tags
+      }
+    } catch (err) {
+      alert(`Gagal generate ${field}: ${err.message}`);
+    } finally {
+      setGeneratingField(null);
+    }
+  };
   const [showPlatformDropdown, setShowPlatformDropdown] = useState(false);
   const [copiedField, setCopiedField] = useState('');
   const platformDropRef = useRef(null);
@@ -1138,8 +1175,13 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Stream Title</label>
-              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter stream title..." />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <label className="form-label" style={{ marginBottom: 0 }}>Stream Title</label>
+                <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate('title')} disabled={generatingField === 'title'} style={{ padding: '4px 8px', fontSize: '11px', height: '24px' }}>
+                  {generatingField === 'title' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
+                </button>
+              </div>
+              <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter stream title..." disabled={generatingField === 'title'} />
             </div>
 
             <div className="form-group">
@@ -1197,10 +1239,14 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                   </div>
                 </div>
 
-                {/* Description */}
                 <div className="form-group">
-                  <label className="form-label">Description</label>
-                  <textarea className="form-textarea" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Stream description..." />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>Description</label>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate('description')} disabled={generatingField === 'description'} style={{ padding: '4px 8px', fontSize: '11px', height: '24px' }}>
+                      {generatingField === 'description' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
+                    </button>
+                  </div>
+                  <textarea className="form-textarea" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Stream description..." disabled={generatingField === 'description'} />
                 </div>
 
                 {/* Privacy & Category */}
@@ -1221,7 +1267,12 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
 
                 {/* Tags */}
                 <div className="form-group">
-                  <label className="form-label"><Tag size={12} /> Tags</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}><Tag size={12} /> Tags</label>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate('tags')} disabled={generatingField === 'tags'} style={{ padding: '4px 8px', fontSize: '11px', height: '24px' }}>
+                      {generatingField === 'tags' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
+                    </button>
+                  </div>
                   <div className="csm-tags-wrap">
                     <div className="csm-tags-list">
                       {tags.map((t, i) => (
@@ -1271,8 +1322,13 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
             {tab === 'api' && (
               <>
                 <div className="form-group">
-                  <label className="form-label">Description</label>
-                  <textarea className="form-textarea" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Stream description..." />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>Description</label>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate('description')} disabled={generatingField === 'description'} style={{ padding: '4px 8px', fontSize: '11px', height: '24px' }}>
+                      {generatingField === 'description' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
+                    </button>
+                  </div>
+                  <textarea className="form-textarea" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Stream description..." disabled={generatingField === 'description'} />
                 </div>
                 <div className="csm-row">
                   <div className="form-group">
@@ -1289,7 +1345,12 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label className="form-label"><Tag size={12} /> Tags</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}><Tag size={12} /> Tags</label>
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate('tags')} disabled={generatingField === 'tags'} style={{ padding: '4px 8px', fontSize: '11px', height: '24px' }}>
+                      {generatingField === 'tags' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
+                    </button>
+                  </div>
                   <div className="csm-tags-wrap">
                     <div className="csm-tags-list">
                       {tags.map((t, i) => (

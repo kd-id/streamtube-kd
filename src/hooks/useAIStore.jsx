@@ -53,7 +53,29 @@ export function useAIStore() {
         if (data.error) throw new Error(data.error.message || 'Gemini API Error');
         return data.candidates[0].content.parts[0].text;
 
-      } else if (state.provider === 'openai') {
+      } else if (state.provider === 'anthropic' && state.baseUrl.includes('anthropic.com')) {
+        const url = `${state.baseUrl.replace(/\/$/, '')}/messages`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': state.apiKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerously-allow-browser': 'true'
+          },
+          body: JSON.stringify({
+            model: state.modelName || 'claude-3-haiku-20240307',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: promptText }],
+            temperature: 0.7
+          })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error.message || 'Anthropic API Error');
+        return data.content[0].text;
+
+      } else {
+        // Fallback for OpenAI, Groq, OpenRouter, xAI, Custom (all use standard OpenAI format)
         const url = `${state.baseUrl.replace(/\/$/, '')}/chat/completions`;
         const res = await fetch(url, {
           method: 'POST',
@@ -68,7 +90,7 @@ export function useAIStore() {
           })
         });
         const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'OpenAI API Error');
+        if (data.error) throw new Error(data.error.message || 'API Error');
         return data.choices[0].message.content;
       }
     } catch (err) {
