@@ -44,39 +44,96 @@ function resolutionToTier(res) {
 
 function buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl, isRtmps }) {
   const [w, h] = tier.resolution.split('x');
-  const scaleFilter = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`;
-  const fullVf = vfFilter ? `${scaleFilter},${vfFilter}` : scaleFilter;
-
-  const enc = [
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
-    '-profile:v', 'baseline', '-level', '3.1',
-    '-r', tier.fps, '-vf', fullVf,
-    '-b:v', `${tier.bitrate}k`, '-minrate', `${tier.bitrate}k`, '-maxrate', `${tier.bitrate}k`,
-    '-bufsize', `${parseInt(tier.bitrate) * 2}k`, '-nal-hrd', 'cbr', '-pix_fmt', 'yuv420p',
-    '-g', `${tier.keyint}`, '-keyint_min', `${tier.keyint}`, '-sc_threshold', '0',
-    '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
-  ];
+  const needsEncode = !!vfFilter;
 
   let args = [];
-  if (mergedVideo && mergedAudio) {
-    args = ['-re', '-stream_loop', '-1', '-i', mergedVideo, '-stream_loop', '-1', '-i', mergedAudio,
-      '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'copy',
-      '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
-  } else if (mergedVideo) {
-    args = ['-re', '-stream_loop', '-1', '-i', mergedVideo,
-      '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-      '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'aac', '-b:a', '128k',
-      '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
-  } else if (mergedAudio) {
+  if (!mergedVideo && mergedAudio) {
+    // Audio-only: must encode generated black video
     args = ['-re', '-stream_loop', '-1', '-i', mergedAudio,
       '-f', 'lavfi', '-i', `color=c=black:s=${w}x${h}:r=${tier.fps}`,
-      '-map', '1:v:0', '-map', '0:a:0', ...enc, '-c:a', 'copy',
+      '-map', '1:v:0', '-map', '0:a:0',
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+      '-profile:v', 'baseline', '-pix_fmt', 'yuv420p',
+      '-b:v', `${tier.bitrate}k`, '-bufsize', `${parseInt(tier.bitrate) * 2}k`,
+      '-g', `${tier.keyint}`, '-keyint_min', `${tier.keyint}`, '-sc_threshold', '0',
+      '-c:a', 'copy',
       '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+  } else if (needsEncode) {
+    // Encode mode — overlays require re-encoding
+    const scaleFilter = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`;
+    const fullVf = vfFilter ? `${scaleFilter},${vfFilter}` : scaleFilter;
+    const enc = [
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+      '-profile:v', 'baseline', '-level', '3.1', '-r', tier.fps, '-vf', fullVf,
+      '-b:v', `${tier.bitrate}k`, '-maxrate', `${tier.bitrate}k`, '-bufsize', `${parseInt(tier.bitrate) * 2}k`,
+      '-nal-hrd', 'cbr', '-pix_fmt', 'yuv420p',
+      '-g', `${tier.keyint}`, '-keyint_min', `${tier.keyint}`, '-sc_threshold', '0',
+      '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
+    ];
+    if (mergedVideo && mergedAudio) {
+      args = ['-re', '-stream_loop', '-1', '-i', mergedVideo, '-stream_loop', '-1', '-i', mergedAudio,
+        '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'copy',
+        '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+    } else if (mergedVideo) {
+      args = ['-re', '-stream_loop', '-1', '-i', mergedVideo,
+        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+        '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'aac', '-b:a', '128k',
+        '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+    }
+  } else {
+    // COPY mode — preprocessed file streamed as-is, ~5% CPU
+    if (mergedVideo && mergedAudio) {
+      args = ['-re', '-stream_loop', '-1', '-i', mergedVideo, '-stream_loop', '-1', '-i', mergedAudio,
+        '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'copy',
+        '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+    } else if (mergedVideo) {
+      args = ['-re', '-stream_loop', '-1', '-i', mergedVideo,
+        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+        '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+        '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
+    }
   }
+
   args.push('-progress', 'pipe:2');
   if (isRtmps) { args.push('-tls_verify', '0', '-f', 'flv', fullRtmpUrl); }
   else { args.push('-f', 'flv', fullRtmpUrl); }
   return args;
+}
+
+// Re-encode merged video at a specific tier's bitrate/resolution for adaptive changes
+async function reencodeForTier(inputPath, tier, ffmpegBin) {
+  const [w, h] = tier.resolution.split('x');
+  const outputPath = inputPath.replace(/(\.\w+)$/, `.tier${tier.tier}$1`);
+
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-i', inputPath,
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+      '-profile:v', 'baseline', '-level', '3.1',
+      '-vf', `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`,
+      '-r', `${tier.fps}`,
+      '-b:v', `${tier.bitrate}k`, '-minrate', `${tier.bitrate}k`, '-maxrate', `${tier.bitrate}k`,
+      '-bufsize', `${parseInt(tier.bitrate) * 2}k`,
+      '-nal-hrd', 'cbr', '-pix_fmt', 'yuv420p',
+      '-g', `${tier.keyint}`, '-keyint_min', `${tier.keyint}`, '-sc_threshold', '0',
+      '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
+      '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
+      '-metadata', 'comment=yt_ready_v2',
+      '-y', outputPath
+    ];
+    console.log(`[Adaptive] Re-encoding: ${path.basename(inputPath)} → ${tier.name} (${tier.bitrate}kbps)`);
+    const proc = spawn(ffmpegBin, args, { shell: false, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    proc.stderr.on('data', () => {}); // drain stderr
+    proc.on('close', code => {
+      if (code === 0 && fs.existsSync(outputPath)) {
+        console.log(`[Adaptive] Re-encode done: ${path.basename(outputPath)}`);
+        resolve(outputPath);
+      } else {
+        reject(new Error(`Re-encode failed (code ${code})`));
+      }
+    });
+    proc.on('error', reject);
+  });
 }
 
 function attachFFmpegHandlers(proc, streamInfo, streamId) {
@@ -88,12 +145,10 @@ function attachFFmpegHandlers(proc, streamInfo, streamId) {
       if (line.includes('frame=') || line.includes('speed=') || line.startsWith('progress=')) {
         streamInfo.status = 'live';
       }
-      // Parse speed for adaptive monitor
       const speedMatch = line.match(/speed=\s*([0-9.]+)x/);
       if (speedMatch && streamInfo.adaptive) {
         streamInfo.adaptive.lastSpeed = parseFloat(speedMatch[1]);
       }
-      // Parse actual output bitrate for adaptive monitor (works in both copy and encode mode)
       const bitrateMatch = line.match(/bitrate=\s*([0-9.]+)kbits\/s/);
       if (bitrateMatch && streamInfo.adaptive) {
         streamInfo.adaptive.lastBitrate = parseFloat(bitrateMatch[1]);
@@ -118,7 +173,7 @@ async function restartStreamWithTier(streamId, newTierNum, reason) {
   stream.adaptive.changing = true;
   const oldTier = stream.adaptive.currentTier;
   console.log(`[Adaptive ${streamId}] Tier ${oldTier} → ${newTierNum} (${tier.name})`);
-  stream.logs.push(`[Adaptive] Quality: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
+  stream.logs.push(`[Adaptive] Changing: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
   dbLog('info', 'adaptive', `Stream ${streamId}: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
 
   // Kill current process
@@ -132,7 +187,28 @@ async function restartStreamWithTier(streamId, newTierNum, reason) {
     }, 50);
   });
 
-  const { mergedVideo, mergedAudio, vfFilter, fullRtmpUrl, isRtmps, ffmpegBin } = stream.config;
+  const { mergedAudio, vfFilter, fullRtmpUrl, isRtmps, ffmpegBin } = stream.config;
+  let mergedVideo = stream.config.mergedVideo;
+
+  // Re-encode the file at new tier's bitrate (temporary CPU spike, then back to copy mode)
+  if (mergedVideo && !vfFilter) {
+    try {
+      if (!stream.config.originalMergedVideo) {
+        stream.config.originalMergedVideo = mergedVideo;
+      }
+      stream.logs.push(`[Adaptive] Re-processing for ${tier.name} (${tier.bitrate}kbps)...`);
+      const newPath = await reencodeForTier(stream.config.originalMergedVideo, tier, ffmpegBin);
+      mergedVideo = newPath;
+      stream.config.mergedVideo = newPath;
+      stream.logs.push(`[Adaptive] Re-processing done! Restarting in copy mode...`);
+    } catch (err) {
+      console.error(`[Adaptive ${streamId}] Re-encode failed:`, err.message);
+      stream.logs.push(`[Adaptive] Re-encode failed: ${err.message}`);
+      stream.adaptive.changing = false;
+      return false;
+    }
+  }
+
   const args = buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl, isRtmps });
   const proc = spawn(ffmpegBin, args, { shell: false, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -155,8 +231,8 @@ async function restartStreamWithTier(streamId, newTierNum, reason) {
   });
   proc.on('error', err => { if (stream.process === proc) { stream.error = err.message; stream.status = 'error'; } });
 
-  console.log(`[Adaptive ${streamId}] Restarted: ${tier.name} ${tier.bitrate}kbps, PID: ${proc.pid}`);
-  stream.logs.push(`[Adaptive] Now at ${tier.name} (${tier.bitrate}kbps)`);
+  console.log(`[Adaptive ${streamId}] Restarted COPY mode: ${tier.name} ${tier.bitrate}kbps, PID: ${proc.pid}`);
+  stream.logs.push(`[Adaptive] Now at ${tier.name} (${tier.bitrate}kbps) — copy mode`);
   return true;
 }
 

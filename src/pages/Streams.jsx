@@ -701,7 +701,7 @@ export default function Streams() {
 function CreateStreamModal({ isOpen, onClose, editId }) {
   const { savedStreams, createStream, updateStream } = useStream();
   const { channels, defaultChannel, credentials, updateChannel } = useYouTube();
-  const { files: mediaFiles } = useMedia();
+  const { files: mediaFiles, addFiles } = useMedia();
   const { playlists } = usePlaylist();
   const { scenes } = useOverlay();
 
@@ -744,8 +744,10 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [broadcastError, setBroadcastError] = useState('');
   const [selectedSceneId, setSelectedSceneId] = useState('');
 
-  // Select Video
-  const [selectedMedia, setSelectedMedia] = useState(null);
+  // Select Video — per tab so API and Manual don't interfere
+  const [mediaPerTab, setMediaPerTab] = useState({ manual: null, api: null });
+  const selectedMedia = mediaPerTab[tab];
+  const setSelectedMedia = (media) => setMediaPerTab(prev => ({ ...prev, [tab]: media }));
   const [showVideoDropdown, setShowVideoDropdown] = useState(false);
   const [videoSearch, setVideoSearch] = useState('');
   const videoDropRef = useRef(null);
@@ -806,7 +808,9 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setScheduledAt(existing.scheduledAt || '');
       setEndAt(existing.endAt || '');
       setEnableMonetization(existing.enableMonetization || false);
-      setSelectedMedia(existing.selectedMedia || null);
+      // Restore selectedMedia to the correct tab
+      const mode = existing.mode || 'manual';
+      setMediaPerTab(prev => ({ ...prev, [mode]: existing.selectedMedia || null }));
       setPlatform(existing.platform || 'youtube');
       setRtmpUrl(existing.rtmpUrl || PLATFORMS[0].rtmp);
       setStreamKey(existing.streamKey || '');
@@ -833,7 +837,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
     setChannelId(defaultChannel?.id || channels[0]?.id || ''); setThumbnailUrl(null);
     setThumbnailServerUrl(null); setThumbnailBase64(null); setShowThumbGallery(false);
     setEnableSchedule(false); setScheduledAt(''); setEndAt('');
-    setEnableMonetization(false); setSelectedMedia(null);
+    setEnableMonetization(false); setMediaPerTab({ manual: null, api: null });
     setPlatform('youtube'); setRtmpUrl(PLATFORMS[0].rtmp);
     setStreamKey(''); setLoopVideo(false); setAdvancedSettings(false);
     setVideoSearch(''); setOrientation('landscape'); setSelectedSceneId('');
@@ -860,6 +864,16 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
         const upData = await upRes.json();
         if (upData.success && upData.file) {
           setThumbnailServerUrl(upData.file.url);
+          // Add to media library so it shows in gallery
+          addFiles([{
+            id: upData.file.filename,
+            name: upData.file.originalname || upData.file.filename,
+            serverFilename: upData.file.filename,
+            type: 'image',
+            size: upData.file.size,
+            url: upData.file.url,
+            createdAt: new Date().toISOString(),
+          }]);
         }
       } catch (err) {
         console.error('Thumbnail upload failed', err);
