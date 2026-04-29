@@ -108,16 +108,38 @@ export function useAIStore() {
 
   const initialApiKeys = { ...saved.apiKeys };
   const initialBaseUrls = { ...saved.baseUrls };
+  
+  // Legacy migration: old single apiKey/baseUrl → per-provider
   if (saved.apiKey && !initialApiKeys[saved.provider || 'gemini']) {
     initialApiKeys[saved.provider || 'gemini'] = saved.apiKey;
   }
-  if (saved.baseUrl && !initialBaseUrls[saved.provider || 'gemini']) {
-    initialBaseUrls[saved.provider || 'gemini'] = saved.baseUrl;
+
+  // ── CLEANUP: Remove cross-contaminated baseUrls ────────────
+  // If a provider's saved URL matches another provider's default, it was leaked — remove it
+  const allDefaults = Object.values(PROVIDER_BASE_URLS).filter(Boolean);
+  for (const provId of Object.keys(initialBaseUrls)) {
+    const url = (initialBaseUrls[provId] || '').replace(/\/+$/, '');
+    const correctDefault = (PROVIDER_BASE_URLS[provId] || '').replace(/\/+$/, '');
+    
+    if (!url) continue;
+    // If it matches a DIFFERENT provider's default → contaminated, delete it
+    if (url !== correctDefault && allDefaults.some(d => d.replace(/\/+$/, '') === url)) {
+      console.warn(`[AI] Cleaned stale baseUrl for ${provId}: "${url}" (belonged to another provider)`);
+      delete initialBaseUrls[provId];
+    }
+    // If it matches its own default → no need to store, delete to keep clean
+    if (url === correctDefault) {
+      delete initialBaseUrls[provId];
+    }
   }
+  // Clear the legacy baseUrl field entirely
+  const cleanedBaseUrl = '';
 
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
     ...saved,
+    apiKey: '',  // Never use legacy single key
+    baseUrl: cleanedBaseUrl,
     apiKeys: initialApiKeys,
     baseUrls: initialBaseUrls,
     providerModels: saved.providerModels || {},
@@ -134,12 +156,33 @@ export function useAIStore() {
     let newApiKeys = { ...state.apiKeys };
     let newBaseUrls = { ...state.baseUrls };
     const targetProv = updates.provider || state.provider;
-    if (updates.apiKey !== undefined) newApiKeys[targetProv] = updates.apiKey;
-    if (updates.baseUrl !== undefined) newBaseUrls[targetProv] = updates.baseUrl;
+    
+    // Only store API key if it's not empty
+    if (updates.apiKey !== undefined) {
+      if (updates.apiKey.trim()) {
+        newApiKeys[targetProv] = updates.apiKey.trim();
+      } else {
+        delete newApiKeys[targetProv]; // Remove empty keys
+      }
+    }
+    
+    // Only store baseUrl if it differs from the provider's built-in default
+    if (updates.baseUrl !== undefined) {
+      const defaultUrl = (PROVIDER_BASE_URLS[targetProv] || '').replace(/\/+$/, '');
+      const userUrl = (updates.baseUrl || '').replace(/\/+$/, '').trim();
+      if (userUrl && userUrl !== defaultUrl) {
+        newBaseUrls[targetProv] = userUrl;
+      } else {
+        delete newBaseUrls[targetProv]; // Use built-in default
+      }
+    }
+    
     dispatch({
       type: 'UPDATE_CONFIG',
       payload: {
         ...updates,
+        apiKey: '', // Never persist legacy single key
+        baseUrl: '', // Never persist legacy single URL
         apiKeys: newApiKeys,
         baseUrls: newBaseUrls,
         providerModels: state.providerModels,

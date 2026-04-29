@@ -493,7 +493,8 @@ function AITab() {
   
   // Load initial key and base for the selected provider
   const initialKey = getEffectiveKey(config.provider || 'gemini');
-  const initialBase = getEffectiveBase(config.provider || 'gemini');
+  // Only show user's custom override — the default is shown via placeholder
+  const initialBase = config.baseUrls?.[config.provider || 'gemini'] || '';
 
   const [apiKey, setApiKey] = useState(initialKey);
   const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
@@ -530,8 +531,10 @@ function AITab() {
     const provKey = getEffectiveKey(prov.id);
     setApiKey(provKey); // empty string if not configured
     
-    // Use the correct base URL for this provider
-    setBaseUrl(getEffectiveBase(prov.id));
+    // Show only user's custom override, not the built-in default
+    // The default is shown via placeholder on the input
+    const userOverride = config.baseUrls?.[prov.id] || '';
+    setBaseUrl(userOverride);
     
     // Load from persisted models if available
     const savedModels = config.providerModels?.[prov.id] || AI_MODELS[prov.id] || [];
@@ -549,7 +552,7 @@ function AITab() {
     updateConfig({
       provider: prov.id,
       apiKey: provKey,
-      baseUrl: getEffectiveBase(prov.id),
+      baseUrl: userOverride, // Only save user override, not the built-in default
       modelName: nextModel,
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
@@ -576,7 +579,8 @@ function AITab() {
   const handleFetchModels = async () => {
     setFetchingModels(true); setFetchMsg('');
     try {
-      const models = await fetchAvailableModels(provider, apiKey, baseUrl);
+      const effectiveBase = baseUrl || getEffectiveBase(provider);
+      const models = await fetchAvailableModels(provider, apiKey, effectiveBase);
       if (models.length > 0) {
         let updatedModels = [...models];
         let currentActive = modelName;
@@ -601,7 +605,8 @@ function AITab() {
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const reply = await testConnection(provider, apiKey, baseUrl, modelName);
+      const effectiveBase = baseUrl || getEffectiveBase(provider);
+      const reply = await testConnection(provider, apiKey, effectiveBase, modelName);
       setTestResult({ ok: true, msg: `Connection successful! Response: "${reply}"` });
     } catch (e) { setTestResult({ ok: false, msg: e.message }); }
     finally { setTesting(false); }
@@ -659,7 +664,7 @@ function AITab() {
         {provider !== 'gemini' && (
           <div className="form-group">
             <label className="form-label"><Link2 size={13} /> {provider === 'custom' ? 'Endpoint URL' : 'API Base URL'}</label>
-            <input className="form-input" type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" />
+            <input className="form-input" type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={AI_PROVIDERS.find(p => p.id === provider)?.defaultBase || 'https://api.example.com/v1'} />
           </div>
         )}
 
