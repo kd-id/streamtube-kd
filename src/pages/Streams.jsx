@@ -199,7 +199,7 @@ export default function Streams() {
     if (stream.mode === 'api') {
       const ch = channels.find(c => c.id === stream.channelId);
       if (!ch) {
-        setStreamError('Channel tidak ditemukan. Hubungkan ulang di Settings.');
+        setStreamError('Channel not found. Please reconnect in Settings.');
         setTimeout(() => setStreamError(''), 6000);
         return;
       }
@@ -250,7 +250,7 @@ export default function Streams() {
         });
         const bcast = await res.json();
         if (!res.ok || !bcast.success) {
-          setStreamError(bcast.error || 'Gagal membuat broadcast YouTube baru');
+          setStreamError(bcast.error || 'Failed to create YouTube broadcast');
           logService.error(LOG_CATEGORIES.YOUTUBE, `Broadcast creation failed: ${bcast.error}`);
           setTimeout(() => setStreamError(''), 6000);
           return;
@@ -295,7 +295,7 @@ export default function Streams() {
     });
 
     if (backendResult && !backendResult.success) {
-      setStreamError(backendResult.error || 'Gagal memulai stream');
+      setStreamError(backendResult.error || 'Failed to start stream');
       logService.error(LOG_CATEGORIES.STREAM, `Stream start failed: ${backendResult.error}`);
       setTimeout(() => setStreamError(''), 6000);
     }
@@ -314,7 +314,7 @@ export default function Streams() {
           });
           logService.info(LOG_CATEGORIES.YOUTUBE, `Broadcast dihentikan: ${stream.title}`);
         } catch (err) {
-          logService.error(LOG_CATEGORIES.YOUTUBE, `Gagal mengakhiri broadcast: ${err.message}`);
+          logService.error(LOG_CATEGORIES.YOUTUBE, `Failed to end broadcast: ${err.message}`);
         }
       }
     }
@@ -555,8 +555,8 @@ export default function Streams() {
       {filtered.length === 0 ? (
         <div className="streams-empty">
           <Radio size={40} strokeWidth={1} />
-          <h3>Belum Ada Stream</h3>
-          <p>Klik "+ New Stream" untuk membuat stream pertama</p>
+          <h3>No Streams Yet</h3>
+          <p>Click "+ New Stream" to create your first stream</p>
         </div>
       ) : (
         <>
@@ -771,7 +771,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
     try {
       const effectiveKey = getEffectiveKey(aiConfig.provider);
       if (!effectiveKey) {
-        alert('API Key AI belum diatur. Silakan atur di Settings > AI Assistants.');
+        alert('AI API Key is not set. Please configure it in Settings > AI Assistants.');
         return;
       }
       setGeneratingField(field);
@@ -783,34 +783,34 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       if (field === 'title') {
         prompt = `Generate 5 highly engaging, clickbait but relevant YouTube live stream titles in English about "${context}".${keywordCtx} STRICTLY use this pattern for the titles: [Main Keyword] + [Benefit] + [Hook/Emotion]. Max 60 characters each. Separate each option ONLY with "|||" without numbering or extra text.`;
       } else if (field === 'description') {
-        prompt = `Buatkan 3 deskripsi YouTube yang SEO-friendly, natural, dan sedikit clickbait (gak kaku, terasa ditulis manusia bukan AI) untuk video/live stream berjudul "${context}".${keywordCtx}
+        prompt = `Write 3 YouTube descriptions for a video/live stream titled "${context}" that are SEO-optimized, natural-sounding, and slightly clickbait — written like a real person, not a generic AI.${keywordCtx}
 
-Aturan penting:
-- Gaya bahasa: santai tapi profesional, kayak teman yang ngerti topiknya
-- Kalimat pembuka HARUS bikin penasaran atau menyentuh emosi penonton (hook kuat!)
-- Sisipkan keyword utama secara natural di paragraf pertama
-- Gunakan emoji secukupnya (jangan berlebihan, 3-5 emoji per deskripsi)
-- Tambahkan bullet points (gunakan •) untuk highlight 3-4 poin penting
-- Akhiri dengan call-to-action yang natural (misal: "Jangan lupa subscribe biar gak ketinggalan!")
-- Tambahkan 5-7 hashtag relevan di baris terakhir
-- Panjang ideal: 150-300 kata per deskripsi
-- JANGAN terdengar generic atau template-an
-- Tulis dalam Bahasa Indonesia yang casual tapi tetap informatif
+Key guidelines:
+- Tone: casual yet professional, like a knowledgeable friend talking to the viewer
+- Opening sentence MUST hook the reader — make them curious or emotionally engaged
+- Naturally include the main keyword in the first paragraph
+- Use emojis sparingly (3–5 emojis per description, not excessive)
+- Include bullet points (use •) highlighting 3–4 key benefits or features
+- End with a natural call-to-action (e.g., "Subscribe so you never miss a stream!")
+- Add 5–7 relevant hashtags at the end
+- Ideal length: 150–300 words per description
+- Do NOT sound generic or templated — make it feel human and authentic
+- Write in American English
 
-PENTING: Pisahkan setiap opsi deskripsi dengan tanda "|||" (tiga garis vertikal). Jangan gunakan penomoran. Contoh format:
-[deskripsi 1]|||[deskripsi 2]|||[deskripsi 3]`;
+IMPORTANT: Separate each description option with "|||" (three vertical bars). Do NOT use numbering. Example format:
+[description 1]|||[description 2]|||[description 3]`;
       } else if (field === 'tags') {
-        prompt = `Buatkan 5 set tags YouTube (masing-masing 15 tags) yang sangat relevan untuk video/live stream ini:
-Judul: "${context}"${descContext}${keywordCtx}
+        prompt = `Generate 5 sets of 15 YouTube tags that are highly relevant for this video/live stream:
+Title: "${context}"${descContext}${keywordCtx}
 
-Aturan:
-- Tags HARUS berhubungan langsung dengan judul dan konten
-- Campurkan: broad tags (volume tinggi) + specific/long-tail tags + trending tags
-- Jangan pakai tags yang terlalu generic seperti "video" atau "youtube"
-- Gunakan bahasa yang sesuai dengan target audiens (campuran Indonesia & English boleh)
-- Prioritaskan tags yang orang benar-benar cari di YouTube
+Guidelines:
+- Tags MUST be directly related to the title and content
+- Mix: broad/high-volume tags + specific long-tail tags + trending tags
+- Avoid overly generic tags like "video" or "youtube"
+- Use English (American) tags that people actually search for on YouTube
+- Prioritize tags with real search intent
 
-PENTING: Pisahkan setiap set dengan tanda "|||" (tiga garis vertikal). Di dalam setiap set, pisahkan tags dengan koma. Jangan gunakan penomoran. Contoh format:
+IMPORTANT: Separate each set with "|||" (three vertical bars). Within each set, separate tags with commas. Do NOT use numbering. Example format:
 tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
       }
 
@@ -834,7 +834,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
 
       setAiSuggestion({ field, options });
     } catch (err) {
-      alert(`Gagal generate ${field}: ${err.message}`);
+      alert(`Failed to generate ${field}: ${err.message}`);
     } finally {
       setGeneratingField(null);
     }
@@ -1077,7 +1077,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
     if (tab === 'api') {
       const ch = channels.find(c => c.id === channelId);
       if (!ch?.accessToken) {
-        setBroadcastError('Channel tidak memiliki access token. Hubungkan ulang channel di Settings.');
+        setBroadcastError('Channel has no access token. Please reconnect your channel in Settings.');
         return;
       }
       setCreatingBroadcast(true);
@@ -1121,7 +1121,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
         });
         const result = await res.json();
         if (!res.ok || !result.success) {
-          setBroadcastError(result.error || 'Gagal membuat broadcast YouTube');
+          setBroadcastError(result.error || 'Failed to create YouTube broadcast');
           setCreatingBroadcast(false);
           return;
         }
@@ -1258,9 +1258,9 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
 
             <div className="form-group" style={{ background: 'rgba(168, 85, 247, 0.05)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
               <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#c084fc', marginBottom: '8px' }}>
-                <Sparkles size={12} /> Kata Kunci AI (Opsional)
+                <Sparkles size={12} /> AI Keywords (Optional)
               </label>
-              <input className="form-input" value={aiKeyword} onChange={e => setAiKeyword(e.target.value)} placeholder="Contoh: gaming, lucu, tutorial..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
+              <input className="form-input" value={aiKeyword} onChange={e => setAiKeyword(e.target.value)} placeholder="e.g. gaming, tutorial, music..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
             </div>
 
             <div className="form-group">
@@ -1388,7 +1388,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                         <RotateCcw size={14} />
                         <span>Loop Video</span>
                         <span style={{ fontSize: '11px', color: loopVideo ? '#2dd4a8' : 'var(--text-muted)', marginLeft: 6 }}>
-                          ({loopVideo ? 'Aktif' : 'Tidak Aktif'})
+                          ({loopVideo ? 'Active' : 'Inactive'})
                         </span>
                       </div>
                       <label className="switch">
@@ -1556,7 +1556,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                     <div className="csm-toggle-left">
                       <span>Advanced Settings</span>
                       <span style={{ fontSize: '11px', color: advancedSettings ? '#2dd4a8' : 'var(--text-muted)' }}>
-                        ({advancedSettings ? 'Aktif' : 'Tidak Aktif'})
+                        ({advancedSettings ? 'Active' : 'Inactive'})
                       </span>
                       <Info size={13} className="csm-info-icon" />
                     </div>
@@ -1726,7 +1726,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                     <div className="csm-toggle-left">
                       <span>Enable Schedule</span>
                       <span style={{ fontSize: '11px', color: enableSchedule ? '#2dd4a8' : 'var(--text-muted)' }}>
-                        ({enableSchedule ? 'Aktif' : 'Tidak Aktif'})
+                        ({enableSchedule ? 'Active' : 'Inactive'})
                       </span>
                       <span className="form-hint-inline" style={{ marginLeft: 8 }}>{new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })} {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                     </div>
@@ -1744,7 +1744,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                     <div className="csm-toggle-left">
                       <span>Enable Monetization</span>
                       <span style={{ fontSize: '11px', color: enableMonetization ? '#2dd4a8' : 'var(--text-muted)' }}>
-                        ({enableMonetization ? 'Aktif' : 'Tidak Aktif'})
+                        ({enableMonetization ? 'Active' : 'Inactive'})
                       </span>
                     </div>
                     <label className="switch">
@@ -1760,7 +1760,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                     <div className="csm-toggle-left">
                       <span>Advanced Settings</span>
                       <span style={{ fontSize: '11px', color: advancedSettings ? '#2dd4a8' : 'var(--text-muted)' }}>
-                        ({advancedSettings ? 'Aktif' : 'Tidak Aktif'})
+                        ({advancedSettings ? 'Active' : 'Inactive'})
                       </span>
                       <Info size={13} className="csm-info-icon" />
                     </div>
@@ -1821,7 +1821,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                           <RotateCcw size={14} />
                           <span>Loop Video</span>
                           <span style={{ fontSize: '11px', color: loopVideo ? '#2dd4a8' : 'var(--text-muted)', marginLeft: 6 }}>
-                            ({loopVideo ? 'Aktif' : 'Tidak Aktif'})
+                            ({loopVideo ? 'Active' : 'Inactive'})
                           </span>
                         </div>
                         <label className="switch">
