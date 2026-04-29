@@ -87,7 +87,10 @@ export function useAIStore() {
         }
       );
       const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
+      if (data.error) {
+        if (data.error.code === 429) throw new Error('Quota API habis atau model tidak tersedia (Free Tier Limit). Ganti model atau API key.');
+        throw new Error(data.error.message);
+      }
       return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
     }
 
@@ -145,7 +148,10 @@ export function useAIStore() {
           }
         );
         const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'Gemini API Error');
+        if (data.error) {
+          if (data.error.code === 429) throw new Error('Quota API habis atau model ini tidak tersedia untuk free tier. Silakan ganti model (misal ke flash) atau gunakan API key lain.');
+          throw new Error(data.error.message || 'Gemini API Error');
+        }
         return data.candidates[0].content.parts[0].text;
 
       } else if (state.provider === 'anthropic') {
