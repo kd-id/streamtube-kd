@@ -1,6 +1,20 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
-import { defaultStreamSettings } from '../data/mockData';
 import { readUserData, writeUserData } from './useUserKey';
+
+const defaultStreamSettings = {
+  title: '',
+  description: '',
+  category: 'Science & Technology',
+  tags: [],
+  privacy: 'public',
+  latency: 'normal',
+  dvr: true,
+  autoCaptions: true,
+  chatEnabled: true,
+  slowMode: false,
+  slowModeDelay: 5,
+  subscriberOnly: false,
+};
 
 const StreamContext = createContext(null);
 
