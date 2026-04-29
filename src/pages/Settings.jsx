@@ -118,7 +118,7 @@ function ProfileTab() {
         </div>
 
         <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave}>
-          {saved ? <><Check size={15} /> Tersimpan!</> : <><Save size={15} /> Simpan Profil</>}
+          {saved ? <><Check size={15} /> Saved!</> : <><Save size={15} /> Save Profile</>}
         </button>
       </div>
     </div>
@@ -146,12 +146,12 @@ function SecurityTab() {
       return;
     }
     if (newPw !== confirmPw) {
-      setMsg({ type: 'error', text: 'Konfirmasi password tidak cocok' });
+      setMsg({ type: 'error', text: 'Password confirmation does not match' });
       return;
     }
     const result = changePassword(currentPw, newPw);
     if (result.success) {
-      setMsg({ type: 'success', text: 'Password berhasil diubah' });
+      setMsg({ type: 'success', text: 'Password changed successfully' });
       setCurrentPw('');
       setNewPw('');
       setConfirmPw('');
@@ -182,7 +182,7 @@ function SecurityTab() {
               type={showCurrent ? 'text' : 'password'}
               value={currentPw}
               onChange={e => setCurrentPw(e.target.value)}
-              placeholder="Masukkan password lama"
+              placeholder="Enter current password"
             />
             <button className="pw-eye" onClick={() => setShowCurrent(v => !v)}>
               {showCurrent ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -275,7 +275,7 @@ function IntegrationTab() {
         {hasCredentials && (
           <div className="cred-status-badge">
             <Check size={13} />
-            <span>API Credentials tersimpan</span>
+            <span>API Credentials saved</span>
           </div>
         )}
 
@@ -355,8 +355,8 @@ function IntegrationTab() {
 
         {channels.length === 0 ? (
           <div className="no-channels">
-            <p>Belum ada channel terhubung.</p>
-            <p className="no-channels-hint">Simpan API credentials lalu klik "Add Channel" untuk menghubungkan akun YouTube.</p>
+            <p>No channels connected yet.</p>
+            <p className="no-channels-hint">Save your API credentials then click "Add Channel" to connect your YouTube channel.</p>
           </div>
         ) : (
           <>
@@ -456,8 +456,8 @@ function AboutTab() {
           </div>
 
           <p className="about-desc">
-            StreamTube Pro adalah dashboard streaming YouTube yang memungkinkan kamu mengelola live stream,
-            media library, playlist, overlays, dan multi-akun dalam satu aplikasi.
+            StreamTube Pro is a YouTube streaming dashboard that lets you manage live streams,
+            media library, playlists, overlays, and multi-account support in one application.
           </p>
         </div>
       </div>
@@ -526,12 +526,12 @@ function AITab() {
     if (provider === prov.id) return;
     setProvider(prov.id);
     
-    // Auto-populate devin's key if empty
-    let newKey = getEffectiveKey(prov.id);
-    if (prov.id === 'devin' && !newKey) newKey = 'apk_b3JnLWIxOTJiMTMxMDUzNjQ5MTFhZjQwMmUxYWE2MzMxZjQ3OjU2MDlkYzFhYzU0MzRiMTg4N2RmZWQxYzlhZjg3NDNk';
+    // Get key ONLY for this specific provider — keep empty if not set
+    const provKey = getEffectiveKey(prov.id);
+    setApiKey(provKey); // empty string if not configured
     
-    setApiKey(newKey);
-    setBaseUrl(getEffectiveBase(prov.id) || prov.defaultBase);
+    // Use the correct base URL for this provider
+    setBaseUrl(getEffectiveBase(prov.id));
     
     // Load from persisted models if available
     const savedModels = config.providerModels?.[prov.id] || AI_MODELS[prov.id] || [];
@@ -545,11 +545,11 @@ function AITab() {
     }
     setModelName(nextModel);
 
-    // Auto-save the provider switch so it doesn't revert when changing tabs
+    // Auto-save the provider switch
     updateConfig({
       provider: prov.id,
-      apiKey: newKey.trim(),
-      baseUrl: (getEffectiveBase(prov.id) || prov.defaultBase).trim(),
+      apiKey: provKey,
+      baseUrl: getEffectiveBase(prov.id),
       modelName: nextModel,
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
@@ -592,8 +592,8 @@ function AITab() {
         setModelName(currentActive);
         saveProviderModels(provider, updatedModels); // Persist globally!
         
-        setFetchMsg(`✓ ${models.length} model ditemukan`);
-      } else { setFetchMsg('Tidak ada model ditemukan.'); }
+        setFetchMsg(`✓ ${models.length} models found`);
+      } else { setFetchMsg('No models found.'); }
     } catch (e) { setFetchMsg('⚠ ' + e.message); }
     finally { setFetchingModels(false); }
   };
@@ -601,8 +601,8 @@ function AITab() {
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const reply = await testConnection({ provider, apiKey, modelName, baseUrl, customTemplate, customPath });
-      setTestResult({ ok: true, msg: `Koneksi berhasil! Response: "${reply}"` });
+      const reply = await testConnection(provider, apiKey, baseUrl, modelName);
+      setTestResult({ ok: true, msg: `Connection successful! Response: "${reply}"` });
     } catch (e) { setTestResult({ ok: false, msg: e.message }); }
     finally { setTesting(false); }
   };
@@ -667,7 +667,7 @@ function AITab() {
         <div className="form-group">
           <label className="form-label"><Key size={13} /> API Key</label>
           <div className="pw-field">
-            <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Masukkan API key..." />
+            <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter API key..." />
             <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
@@ -686,7 +686,7 @@ function AITab() {
                 onChange={e => setCustomTemplate(e.target.value)} 
                 placeholder={`{\n  "messages": [\n    { "role": "user", "content": "{{PROMPT}}" }\n  ],\n  "model": "{{MODEL}}"\n}`} 
               />
-              <p className="ai-fetch-msg" style={{color: 'var(--text-muted)'}}>Gunakan <code>{`{{PROMPT}}`}</code> dan <code>{`{{MODEL}}`}</code> sebagai placeholder.</p>
+              <p className="ai-fetch-msg" style={{color: 'var(--text-muted)'}}>Use <code>{`{{PROMPT}}`}</code> and <code>{`{{MODEL}}`}</code> as placeholders.</p>
             </div>
             <div className="form-group">
               <label className="form-label"><ArrowRight size={13} /> Response Extraction Path</label>
@@ -703,7 +703,7 @@ function AITab() {
         )}
 
         <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved}>
-          {saved ? <><Check size={14} /> Tersimpan!</> : <><Save size={14} /> Simpan Konfigurasi</>}
+          {saved ? <><Check size={14} /> Saved!</> : <><Save size={14} /> Save Configuration</>}
         </button>
       </div>
 
@@ -719,7 +719,7 @@ function AITab() {
           <div className="ai-model-label-row">
             <label className="form-label" style={{ margin: 0 }}><BrainCircuit size={13} /> Model</label>
             {provider !== 'custom' && provider !== 'devin' && (
-              <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !apiKey} title="Fetch model terbaru dari API">
+              <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !apiKey} title="Fetch latest models from API">
                 <RefreshCw size={12} className={fetchingModels ? 'spin' : ''} />
                 {fetchingModels ? 'Fetching...' : 'Update List'}
               </button>
@@ -730,7 +730,7 @@ function AITab() {
           {provider !== 'custom' && provider !== 'devin' && (
             <div className="ai-model-search">
               <Search size={13} />
-              <input type="text" placeholder="Cari model..." value={modSearch} onChange={e => setModSearch(e.target.value)} />
+              <input type="text" placeholder="Search models..." value={modSearch} onChange={e => setModSearch(e.target.value)} />
             </div>
           )}
 
@@ -740,11 +740,11 @@ function AITab() {
 
           {/* Model list / custom input */}
           {provider === 'custom' || provider === 'devin' ? (
-            <input className="form-input" style={{ marginTop: '8px' }} type="text" value={modelName} onChange={e => setModelName(e.target.value)} placeholder={provider === 'devin' ? "devin-session" : "nama-model"} disabled={provider === 'devin'} />
+            <input className="form-input" style={{ marginTop: '8px' }} type="text" value={modelName} onChange={e => setModelName(e.target.value)} placeholder={provider === 'devin' ? "devin-session" : "model-name"} disabled={provider === 'devin'} />
           ) : (
             <div className="ai-model-list">
               {filteredModels.length === 0
-                ? <div className="ai-model-empty">Model tidak ditemukan.</div>
+                ? <div className="ai-model-empty">No models found.</div>
                 : filteredModels.map(m => (
                   <button
                     type="button"
@@ -766,21 +766,21 @@ function AITab() {
         {modelName && provider !== 'custom' && provider !== 'devin' && (
           <div className="ai-selected-model" style={{ '--prov-color': activeProvider.color }}>
             <BrainCircuit size={13} />
-            <span>Aktif: <strong>{modelName}</strong></span>
+            <span>Active: <strong>{modelName}</strong></span>
           </div>
         )}
 
         {/* Test connection */}
         <div className="form-group" style={{ marginTop: '16px' }}>
-          <label className="form-label"><Wifi size={13} /> Test Koneksi</label>
+          <label className="form-label"><Wifi size={13} /> Test Connection</label>
           <button
             className="ai-test-btn"
             onClick={handleTest}
             disabled={testing || !apiKey || !modelName}
           >
             {testing
-              ? <><RefreshCw size={14} className="spin" /> Testing koneksi...</>
-              : <><Wifi size={14} /> Jalankan Test</>}
+              ? <><RefreshCw size={14} className="spin" /> Testing connection...</>
+              : <><Wifi size={14} /> Run Test</>}
           </button>
           {testResult && (
             <div className={`ai-test-result ${testResult.ok ? 'ok' : 'err'}`}>

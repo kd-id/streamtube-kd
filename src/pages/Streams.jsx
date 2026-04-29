@@ -762,7 +762,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [rtmpUrl, setRtmpUrl] = useState('rtmp://a.rtmp.youtube.com/live2');
   const [streamKey, setStreamKey] = useState('');
   
-  const { config: aiConfig, generateText, generateAllMeta, getEffectiveKey } = useAIStore();
+  const { config: aiConfig, generateText, generateAllMeta, getEffectiveKey, getRemainingRequests } = useAIStore();
   const [generatingField, setGeneratingField] = useState(null); // 'title'|'description'|'tags'|'all'
   const [aiSuggestion, setAiSuggestion] = useState(null);
   const [aiKeyword, setAiKeyword] = useState('');
@@ -1299,7 +1299,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
               </div>
               <input className="form-input" value={aiKeyword} onChange={e => setAiKeyword(e.target.value)} placeholder="e.g. gaming, tutorial, music..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
               <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
-                ⚡ Generate All fills title, description &amp; tags in <strong>one API request</strong> — saves tokens &amp; uses cache.
+                ⚡ Generate All fills title, description &amp; tags in <strong>one API request</strong> — saves tokens &amp; uses cache. <span style={{ color: '#a855f7' }}>({getRemainingRequests()} requests remaining)</span>
               </p>
             </div>
 
