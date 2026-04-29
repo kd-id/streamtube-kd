@@ -783,56 +783,27 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       if (field === 'title') {
         prompt = `You are a viral YouTube title expert. Generate 5 DIFFERENT title options for a video/live stream about "${context}".${keywordCtx}
 
-Rules:
-- Each title must be max 70 characters
-- Use power words, curiosity gaps, or emotional triggers
-- Mix these styles: "How To" / "Why X" / "I Tried X" / "The Truth About X" / "X That Will Change Y"  
-- Must feel written by a real person, NOT a generic AI
-- Slightly clickbait but still honest and relevant
-- Include numbers or specific details when possible
+Write the titles in American English, but strictly follow this instruction:
+Gabungan antara SEO + curiosity + emosi. Make it highly engaging, slightly clickbait but honest. Max 70 characters.
 
 Separate each title ONLY with "|||". No numbering, no quotes, no extra text.`;
       } else if (field === 'description') {
         prompt = `You are a successful YouTuber writing a description for your video/live stream titled "${context}".${keywordCtx}
 
-Write 3 DIFFERENT full-length YouTube descriptions (each 250-400 words). Each must follow this structure:
+Write 3 DIFFERENT full-length YouTube descriptions (each 150-300 words).
 
-HOOK (2-3 sentences): Start with something bold, personal, or controversial. Never start with "Welcome" or "In this video". Try: "Okay so I need to talk about this...", "Most people get this completely wrong...", "I almost didn't upload this, but..."
-
-VALUE (3-4 sentences): What will the viewer learn? Be specific. Use "you" and "your".
-
-BULLET POINTS (use •): 4-5 specific highlights. Not generic — make each one intriguing.
-
-CREDIBILITY (1-2 sentences): Social proof or urgency. "Thousands of viewers already..." or "I've spent 100+ hours researching this..."
-
-CTA (1-2 sentences): Casual, not desperate. "Smash subscribe if this was helpful 🔥" or "Drop a comment telling me your experience!"
-
-HASHTAGS (last line): 6-8 relevant hashtags with #
-
-Additional rules:
-- Use 4-6 emojis naturally (🔥 💡 🎯 ⚡ 🚀 👀 etc)
-- Sound like a REAL person, not ChatGPT
-- Each description should have a different angle/hook
-- Write in American English
-- Be specific to the topic, not generic
+Write the descriptions in American English, but strictly follow this instruction:
+Deskripsi YouTube yang SEO + natural + sedikit clickbait (gak kaku, terasa manusia). Include a hook, bullet points for value, and a natural call-to-action. Include 4-6 emojis naturally and 6-8 hashtags at the end. Do NOT sound like ChatGPT.
 
 IMPORTANT: Separate each description with "|||". No numbering.`;
       } else if (field === 'tags') {
         prompt = `Generate 5 DIFFERENT sets of YouTube tags for this video/live stream:
 Title: "${context}"${descContext}${keywordCtx}
 
-Each set must have exactly 15-20 tags. Follow this breakdown per set:
-- 5 high-volume exact-match tags (what people actually type in YouTube search)
-- 5 long-tail tags (3-5 word specific phrases)  
-- 5 related/trending niche tags
-- 3-5 competitor/alternative keywords
+Strictly follow this instruction:
+Generate tag sesuai judul + deskripsi maksimal 20 Tag per set. Make sure they are highly relevant search terms. Mix broad terms, long-tail phrases, and niche terms.
 
-Rules:
-- Every tag must be directly relevant to the title
-- NO generic tags like "video", "youtube", "content", "2024", "live"
-- Tags should be things REAL people search for on YouTube
-- Mix English tags that match actual search queries
-- Include both broad and hyper-specific tags
+Write the tags in English. 
 
 IMPORTANT: Separate each set with "|||". Within each set, separate tags with commas. No numbering.`;
       }

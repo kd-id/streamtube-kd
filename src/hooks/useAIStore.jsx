@@ -410,35 +410,20 @@ export function useAIStore() {
     if (cached) { console.log('[AI] ✓ Meta cache hit for:', context); return cached; }
 
     const keywordLine = keywords ? `\nFocus keywords: ${keywords}` : '';
-    const prompt = `You are a top-tier YouTube content strategist who writes like a real creator, not a robot. Generate complete metadata for a video/live stream about: "${context}"${keywordLine}
+    const prompt = `You are a top-tier YouTube content strategist. Generate complete metadata for a video/live stream about: "${context}"${keywordLine}
 
-Write in American English. Respond in EXACTLY this format (no markdown, no extra commentary):
+Write the final output in American English, but strictly follow these instructions:
+1. TITLE: Gabungan antara SEO + curiosity + emosi. Make it highly engaging, clickbait but honest. Max 70 characters.
+2. DESCRIPTION: Deskripsi YouTube yang SEO + natural + sedikit clickbait (gak kaku, terasa manusia). Include a hook, bullet points for value, and a natural call-to-action. Include 4-6 emojis naturally and 6-8 hashtags at the end.
+3. TAGS: Generate tag sesuai judul + deskripsi maksimal 20 Tag. Make sure they are highly relevant search terms.
 
-TITLE: <Write ONE viral-worthy title. Use power words, curiosity gaps, or emotional triggers. Must feel human, slightly clickbait but honest. Max 70 characters. Examples of good patterns: "I Tried X for 30 Days — Here's What Happened", "The SECRET Nobody Tells You About X", "Why X Will Change Everything in 2025">
+Respond EXACTLY in this format (no markdown, no extra commentary):
+
+TITLE: <your title here>
 ---
-DESCRIPTION: <Write a FULL YouTube description (250-400 words). Follow these rules STRICTLY:
-
-PARAGRAPH 1 (Hook - 2-3 sentences): Start with a bold statement, personal story, or question that makes viewers NEED to keep reading. Use emotion. Don't start with "Welcome to" or "In this video". Instead try: "Okay real talk...", "I wasn't going to share this, but...", "You've been doing X wrong your entire life."
-
-PARAGRAPH 2 (Value - 3-4 sentences): Explain what the viewer will learn or experience. Be specific about benefits. Use "you" and "your" to speak directly to them.
-
-BULLET POINTS (use •): List 4-5 key highlights or topics covered. Make each one specific and intriguing, not generic.
-
-PARAGRAPH 3 (Social proof / urgency - 1-2 sentences): Add credibility or urgency. "Join 50K+ viewers who..." or "This info won't be free forever..."
-
-CALL TO ACTION (1-2 sentences): Natural, not desperate. Example: "If this helped you even 1%, smash that subscribe button — I drop content like this every week 🔥"
-
-HASHTAGS (last line): Add 6-8 relevant hashtags starting with #. Mix popular and niche.
-
-Use 4-6 emojis naturally throughout (🔥 💡 🎯 ⚡ 🚀 etc). Do NOT sound like ChatGPT. Sound like a real YouTuber who's excited about their content.>
+DESCRIPTION: <your description here>
 ---
-TAGS: <Generate exactly 20 YouTube search tags, comma-separated. Rules:
-- First 5 tags: exact match / high-volume search terms related to the title
-- Next 5 tags: long-tail variations (3-5 word phrases people actually search)
-- Next 5 tags: related topics / trending terms in the same niche  
-- Last 5 tags: competitor/alternative keywords viewers might search
-- NO generic tags like "video", "youtube", "content", "2024"
-- Each tag should be something a real person would type into YouTube search>`;
+TAGS: <tag1, tag2, tag3, ..., tag20>`;
 
     const result = await generateText(prompt, MAX_TOKENS.generateAll);
 
