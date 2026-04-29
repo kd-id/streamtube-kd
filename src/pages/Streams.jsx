@@ -480,50 +480,28 @@ export default function Streams() {
             </div>
           </div>
 
-          {/* Adaptive Quality Panel */}
+          {/* Adaptive Quality Panel — always auto */}
           {realStreamStatus?.adaptive && (
             <div className="hpm-adaptive">
               <div className="hpm-adaptive-header">
                 <div className="hpm-adaptive-title">
                   <Gauge size={14} />
                   <span>Adaptive Quality</span>
-                  <span className={`hpm-adaptive-mode ${realStreamStatus.adaptive.enabled ? 'auto' : 'manual'}`}>
-                    {realStreamStatus.adaptive.enabled ? '🤖 Auto' : '🔧 Manual'}
-                  </span>
+                  <span className="hpm-adaptive-mode auto">🤖 Auto</span>
                 </div>
-                <div className="hpm-adaptive-controls">
-                  <button
-                    className="hpm-tier-btn"
-                    disabled={realStreamStatus.adaptive.currentTier <= 1 || realStreamStatus.adaptive.changing}
-                    onClick={() => fetch('/api/stream/adaptive', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: healthId, manualTier: realStreamStatus.adaptive.currentTier - 1 }) })}
-                  >▼</button>
-                  <span className={`hpm-tier-badge tier-${realStreamStatus.adaptive.currentTier}`}>
-                    Tier {realStreamStatus.adaptive.currentTier} — {realStreamStatus.adaptive.tierName}
-                    {realStreamStatus.adaptive.tierBitrate && ` (${realStreamStatus.adaptive.tierBitrate}kbps)`}
-                  </span>
-                  <button
-                    className="hpm-tier-btn"
-                    disabled={realStreamStatus.adaptive.currentTier >= realStreamStatus.adaptive.maxTier || realStreamStatus.adaptive.changing}
-                    onClick={() => fetch('/api/stream/adaptive', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: healthId, manualTier: realStreamStatus.adaptive.currentTier + 1 }) })}
-                  >▲</button>
-                </div>
+                <span className={`hpm-tier-badge tier-${realStreamStatus.adaptive.currentTier}`}>
+                  Tier {realStreamStatus.adaptive.currentTier} — {realStreamStatus.adaptive.tierName}
+                  {realStreamStatus.adaptive.tierBitrate && ` (${realStreamStatus.adaptive.tierBitrate}kbps)`}
+                </span>
               </div>
-              <div className="hpm-adaptive-info">
-                <div className="hpm-adaptive-speed">
-                  <span>Speed:</span>
-                  <span className={`hpm-speed-value ${realStreamStatus.adaptive.speed >= 1 ? 'good' : realStreamStatus.adaptive.speed >= 0.85 ? 'warn' : 'bad'}`}>
-                    {realStreamStatus.adaptive.speed ? realStreamStatus.adaptive.speed.toFixed(2) + 'x' : '--'}
-                    {realStreamStatus.adaptive.speed >= 1 ? ' ✅' : realStreamStatus.adaptive.speed >= 0.85 ? ' ⚠️' : realStreamStatus.adaptive.speed > 0 ? ' 🔴' : ''}
-                  </span>
-                  <span style={{fontSize:'11px',color:'var(--text-muted)',marginLeft:'8px'}}>Max: Tier {realStreamStatus.adaptive.maxTier}</span>
-                  {realStreamStatus.adaptive.changing && <span className="hpm-tier-changing">⏳ Changing...</span>}
-                </div>
-                <button
-                  className={`hpm-adaptive-toggle ${realStreamStatus.adaptive.enabled ? 'on' : 'off'}`}
-                  onClick={() => fetch('/api/stream/adaptive', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ streamId: healthId, enabled: !realStreamStatus.adaptive.enabled }) }).then(() => {})}
-                >
-                  {realStreamStatus.adaptive.enabled ? 'Disable Auto' : 'Enable Auto'}
-                </button>
+              <div className="hpm-adaptive-speed">
+                <span>Speed:</span>
+                <span className={`hpm-speed-value ${realStreamStatus.adaptive.speed >= 1 ? 'good' : realStreamStatus.adaptive.speed >= 0.85 ? 'warn' : 'bad'}`}>
+                  {realStreamStatus.adaptive.speed ? realStreamStatus.adaptive.speed.toFixed(2) + 'x' : '--'}
+                  {realStreamStatus.adaptive.speed >= 1 ? ' ✅' : realStreamStatus.adaptive.speed >= 0.85 ? ' ⚠️' : realStreamStatus.adaptive.speed > 0 ? ' 🔴' : ''}
+                </span>
+                <span style={{fontSize:'11px',color:'var(--text-muted)',marginLeft:'8px'}}>Max: Tier {realStreamStatus.adaptive.maxTier}</span>
+                {realStreamStatus.adaptive.changing && <span className="hpm-tier-changing">⏳ Changing...</span>}
               </div>
               {realStreamStatus.adaptive.tierHistory?.length > 0 && (
                 <div className="hpm-tier-history">

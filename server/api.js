@@ -1289,7 +1289,7 @@ export const apiMiddleware = async (req, res, next) => {
             rtmpUrl: fullRtmpUrl,
             config: { mergedVideo, mergedAudio, vfFilter, fullRtmpUrl, isRtmps, ffmpegBin },
             adaptive: {
-              enabled: !!adaptiveEnabled,
+              enabled: true,  // Always auto — no manual mode
               currentTier: initialTier,
               maxTier: getMaxTier(),
               lastSpeed: 0,
@@ -1302,7 +1302,7 @@ export const apiMiddleware = async (req, res, next) => {
             },
           };
 
-          console.log(`  FFmpeg PID: ${proc.pid || 'unknown'}, Adaptive: ${adaptiveEnabled ? 'ON' : 'OFF'}, Tier: ${initialTier}, MaxTier: ${streamInfo.adaptive.maxTier}`);
+          console.log(`  FFmpeg PID: ${proc.pid || 'unknown'}, Adaptive: ALWAYS ON, Tier: ${initialTier}, MaxTier: ${streamInfo.adaptive.maxTier}`);
 
           // Attach shared FFmpeg output handlers
           attachFFmpegHandlers(proc, streamInfo, streamId);
@@ -1353,11 +1353,9 @@ export const apiMiddleware = async (req, res, next) => {
 
           activeStreams.set(streamId, streamInfo);
 
-          // Start adaptive quality monitor if enabled
-          if (adaptiveEnabled) {
-            streamInfo.adaptive.monitorInterval = startAdaptiveMonitor(streamId);
-            console.log(`[Stream ${streamId}] Adaptive monitor started (max tier: ${streamInfo.adaptive.maxTier})`);
-          }
+          // Always start adaptive quality monitor
+          streamInfo.adaptive.monitorInterval = startAdaptiveMonitor(streamId);
+          console.log(`[Stream ${streamId}] Adaptive monitor started (max tier: ${streamInfo.adaptive.maxTier})`);
 
             } catch (bgError) {
               console.error(`[Background Processing Error] Stream ${streamId} failed:`, bgError);
