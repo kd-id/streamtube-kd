@@ -809,7 +809,6 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setEndAt(existing.endAt || '');
       setEnableMonetization(existing.enableMonetization || false);
       // Restore selectedMedia to the correct tab
-      const mode = existing.mode || 'manual';
       setMediaPerTab(prev => ({ ...prev, [mode]: existing.selectedMedia || null }));
       setPlatform(existing.platform || 'youtube');
       setRtmpUrl(existing.rtmpUrl || PLATFORMS[0].rtmp);
