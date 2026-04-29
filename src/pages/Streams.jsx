@@ -290,7 +290,7 @@ export default function Streams() {
       resolution: stream.resolution || '1280x720',
       loopVideo: stream.loopVideo || false,
       sceneData: sceneData ? sceneData.items : null,
-      adaptiveEnabled: stream.adaptiveEnabled || false,
+      adaptiveEnabled: true,
     });
 
     if (backendResult && !backendResult.success) {
@@ -596,9 +596,11 @@ export default function Streams() {
                         <div className="st-name-cell">
                           <div className="st-thumb">
                             {s.selectedMedia?.serverFilename ? (
-                                <img src={`/api/video/thumbnail/${encodeURIComponent(s.selectedMedia.serverFilename)}`} alt="" onError={(e) => { e.target.style.display='none'; }} />
+                                <img src={`/api/video/thumbnail/${encodeURIComponent(s.selectedMedia.serverFilename)}`} alt="" onError={(e) => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} />
                               ) : s.thumbnailUrl && !s.thumbnailUrl.startsWith('blob:') ? (
                                 <img src={s.thumbnailUrl} alt="" />
+                              ) : s.thumbnailBase64 ? (
+                                <img src={s.thumbnailBase64} alt="" />
                               ) : s.selectedMedia?.type === 'playlist' ? (
                                 <div className="st-thumb-placeholder playlist"><ListMusic size={14} /></div>
                               ) : (
@@ -616,9 +618,6 @@ export default function Streams() {
                             </span>
                             <span className="st-meta" style={{ display: 'flex', gap: '8px', alignItems: 'center', opacity: 0.8, marginTop: '2px' }}>
                               <span>Dibuat: {s.createdAt ? new Date(s.createdAt).toLocaleDateString('id-ID', {day:'numeric',month:'short',year:'numeric'}) : '--'}</span>
-                              {s.status === 'offline' && s.lastDurationSeconds > 0 && (
-                                <span style={{ color: '#2dd4a8' }}>• Run Time: {formatTime(s.lastDurationSeconds)}</span>
-                              )}
                             </span>
                             {s.scheduleChecked && s.scheduleTime && (
                               <span className="st-meta" style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
@@ -750,7 +749,6 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [endAt, setEndAt] = useState('');
   const [enableMonetization, setEnableMonetization] = useState(false);
   const [loopVideo, setLoopVideo] = useState(false);
-  const [adaptiveEnabled, setAdaptiveEnabled] = useState(false);
   const [advancedSettings, setAdvancedSettings] = useState(false);
   const [resolution, setResolution] = useState('1280x720');
   const [bitrate, setBitrate] = useState('2500');
@@ -815,7 +813,6 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setRtmpUrl(existing.rtmpUrl || PLATFORMS[0].rtmp);
       setStreamKey(existing.streamKey || '');
       setLoopVideo(existing.loopVideo || false);
-      setAdaptiveEnabled(existing.adaptiveEnabled || false);
       setSelectedSceneId(existing.selectedSceneId || '');
       
       const hasAdvChanges = existing.resolution && (existing.resolution !== '1280x720' || existing.bitrate !== '2500' || existing.fps !== '30' || existing.orientation !== 'landscape');
@@ -840,7 +837,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
     setEnableSchedule(false); setScheduledAt(''); setEndAt('');
     setEnableMonetization(false); setSelectedMedia(null);
     setPlatform('youtube'); setRtmpUrl(PLATFORMS[0].rtmp);
-    setStreamKey(''); setLoopVideo(false); setAdaptiveEnabled(false); setAdvancedSettings(false);
+    setStreamKey(''); setLoopVideo(false); setAdvancedSettings(false);
     setVideoSearch(''); setOrientation('landscape'); setSelectedSceneId('');
   };
 
@@ -1003,7 +1000,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
           title: title.trim(), description, privacy, category, tags, channelId, 
           thumbnailUrl: thumbnailServerUrl || thumbnailUrl, thumbnailBase64,
           scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
-          enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled,
+          enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
           platform: 'youtube',
           rtmpUrl: result.rtmpUrl,
           streamKey: result.streamKey,
@@ -1028,7 +1025,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       title: title.trim(), description, privacy, category, tags, channelId, 
       thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
       scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
-      enableMonetization, mode: tab, resolution, bitrate, fps, selectedMedia, adaptiveEnabled,
+      enableMonetization, mode: tab, resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
       platform, rtmpUrl, streamKey, loopVideo, orientation, selectedSceneId,
     };
     if (editId) updateStream(editId, data);
@@ -1242,19 +1239,6 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                       </div>
                       <label className="switch">
                         <input type="checkbox" checked={loopVideo} onChange={e => setLoopVideo(e.target.checked)} />
-                        <span className="switch-slider" />
-                      </label>
-                    </div>
-                    <div className="csm-toggle-item compact">
-                      <div className="csm-toggle-left">
-                        <Gauge size={14} />
-                        <span>Adaptive Quality</span>
-                        <span style={{ fontSize: '11px', color: adaptiveEnabled ? '#60a5fa' : 'var(--text-muted)', marginLeft: 6 }}>
-                          ({adaptiveEnabled ? 'Auto — adjusts resolution/bitrate automatically' : 'Manual'})
-                        </span>
-                      </div>
-                      <label className="switch">
-                        <input type="checkbox" checked={adaptiveEnabled} onChange={e => setAdaptiveEnabled(e.target.checked)} />
                         <span className="switch-slider" />
                       </label>
                     </div>
@@ -1646,19 +1630,6 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                         </div>
                         <label className="switch">
                           <input type="checkbox" checked={loopVideo} onChange={e => setLoopVideo(e.target.checked)} />
-                          <span className="switch-slider" />
-                        </label>
-                      </div>
-                      <div className="csm-toggle-item compact">
-                        <div className="csm-toggle-left">
-                          <Gauge size={14} />
-                          <span>Adaptive Quality</span>
-                          <span style={{ fontSize: '11px', color: adaptiveEnabled ? '#60a5fa' : 'var(--text-muted)', marginLeft: 6 }}>
-                            ({adaptiveEnabled ? 'Auto' : 'Manual'})
-                          </span>
-                        </div>
-                        <label className="switch">
-                          <input type="checkbox" checked={adaptiveEnabled} onChange={e => setAdaptiveEnabled(e.target.checked)} />
                           <span className="switch-slider" />
                         </label>
                       </div>

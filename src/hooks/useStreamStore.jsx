@@ -148,7 +148,7 @@ function reducer(state, action) {
 }
 
 export function StreamProvider({ children }) {
-  // Sanitize: force all streams to 'offline' on boot — no FFmpeg process survives a page refresh
+  // Default to offline on boot — then sync with backend for actually running streams
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
     savedStreams: (readUserData(STREAMS_KEY, []) || []).map(s => ({
@@ -159,6 +159,24 @@ export function StreamProvider({ children }) {
       health: null,
     })),
   });
+
+  // On mount: check backend for actually running streams and restore their live status
+  useEffect(() => {
+    const syncActive = async () => {
+      try {
+        const res = await fetch('/api/streams/active');
+        const data = await res.json();
+        if (data.streams && data.streams.length > 0) {
+          data.streams.forEach(active => {
+            if (active.status === 'live' || active.status === 'starting') {
+              dispatch({ type: 'UPDATE_STREAM', payload: { id: active.streamId, updates: { status: active.status } } });
+            }
+          });
+        }
+      } catch {}
+    };
+    syncActive();
+  }, []);
 
   const mounted = useRef(false);
   // Persist savedStreams — strip ephemeral runtime fields so 'live' status never reaches storage
