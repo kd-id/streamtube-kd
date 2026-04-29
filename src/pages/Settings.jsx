@@ -3,7 +3,7 @@ import {
   User, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
   RefreshCw, Lock, Mail, LogOut, Bot, Server, Key, BrainCircuit,
-  Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap
+  Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap, X
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useYouTube } from '../hooks/useYouTubeStore';
