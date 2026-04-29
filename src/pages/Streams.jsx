@@ -1343,7 +1343,8 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                         <>
                           <img src={thumbnailUrl} alt="" className="csm-thumb-img" />
                           <div className="csm-thumb-overlay-action">
-                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><ImageIcon size={12} /> Change</button>
+                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><ImageIcon size={12} /> Upload</button>
+                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><ImageIcon size={12} /> Gallery</button>
                             <button className="btn-action stop" onClick={handleRemoveThumbnail}><X size={12} /> Remove</button>
                           </div>
                         </>
@@ -1524,7 +1525,8 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                         <>
                           <img src={thumbnailUrl} alt="" className="csm-thumb-img" />
                           <div className="csm-thumb-overlay-action">
-                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}><ImageIcon size={12} /> Change</button>
+                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}><ImageIcon size={12} /> Upload</button>
+                            <button className="btn-action start" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><ImageIcon size={12} /> Gallery</button>
                             <button className="btn-action stop" onClick={handleRemoveThumbnail}><X size={12} /> Remove</button>
                           </div>
                         </>
