@@ -75,9 +75,10 @@ function buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl
         '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'copy',
         '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
     } else if (mergedVideo) {
+      // Video with embedded audio — use audio from the same file
       args = ['-re', '-stream_loop', '-1', '-i', mergedVideo,
-        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-        '-map', '0:v:0', '-map', '1:a:0', ...enc, '-c:a', 'aac', '-b:a', '128k',
+        '-map', '0:v:0', '-map', '0:a:0?',
+        ...enc, '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
         '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
     }
   } else {
@@ -87,9 +88,10 @@ function buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl
         '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'copy',
         '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
     } else if (mergedVideo) {
+      // Video with embedded audio — copy both tracks
       args = ['-re', '-stream_loop', '-1', '-i', mergedVideo,
-        '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-        '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:v', 'copy', '-c:a', 'copy',
         '-flvflags', 'no_duration_filesize', '-avoid_negative_ts', 'make_zero'];
     }
   }
@@ -176,16 +178,10 @@ async function restartStreamWithTier(streamId, newTierNum, reason) {
   stream.logs.push(`[Adaptive] Changing: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
   dbLog('info', 'adaptive', `Stream ${streamId}: Tier ${oldTier} → ${newTierNum} (${tier.name})`);
 
-  // Kill current process
+  // Kill current process — don't wait, start new one immediately for minimal gap
   try { if (stream.process && !stream.process.killed) stream.process.kill('SIGTERM'); } catch {}
-  await new Promise(r => {
-    const t = setTimeout(r, 1000);
-    const iv = setInterval(() => {
-      if (!stream.process || stream.process.killed || stream.process.exitCode !== null) {
-        clearInterval(iv); clearTimeout(t); r();
-      }
-    }, 50);
-  });
+  // Brief 200ms for RTMP connection cleanup (prevents "already publishing" errors)
+  await new Promise(r => setTimeout(r, 200));
 
   const { mergedAudio, vfFilter, fullRtmpUrl, isRtmps, ffmpegBin } = stream.config;
   let mergedVideo = stream.config.mergedVideo;
@@ -1363,14 +1359,14 @@ export const apiMiddleware = async (req, res, next) => {
                   '-avoid_negative_ts', 'make_zero'
               ];
           } else if (mergedVideo) {
+              // Video with embedded audio — use audio from video file
               args = [
                   '-re',
                   '-stream_loop', '-1', '-i', mergedVideo,
-                  '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-                  '-map', '0:v:0', '-map', '1:a:0',
+                  '-map', '0:v:0', '-map', '0:a:0?',
                   ...(vfFilter ? ['-vf', vfFilter] : []),
                   ...ytVideoArgs,
-                  '-c:a', 'aac', '-b:a', '128k',
+                  '-c:a', 'aac', '-b:a', '128k', '-ar', '44100',
                   '-flvflags', 'no_duration_filesize',
                   '-avoid_negative_ts', 'make_zero'
               ];
