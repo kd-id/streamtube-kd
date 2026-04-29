@@ -59,16 +59,16 @@ function useVideoThumbnail(file) {
 function FileCard({ f, onPreview, onDelete, onCategoryEdit, editingCategory, onCategoryChange }) {
   const thumb = useVideoThumbnail(f);
   const getExt = (name) => name.split('.').pop().toUpperCase();
-  const isImage = f.type === 'image';
+  const isImage = f.type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(f.name);
 
   return (
     <div className="glass-card file-card">
       <div
         className={`file-thumb ${f.type}`}
         style={
-          isImage && f.objectUrl ? { backgroundImage: `url(${f.objectUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' } :
-          thumb ? { backgroundImage: `url(${thumb})`, backgroundSize: 'cover', backgroundPosition: 'center' } :
-          { background: f.type === 'video' ? VIDEO_GRADIENT : f.type === 'image' ? IMAGE_GRADIENT : MUSIC_GRADIENT }
+          isImage && f.objectUrl ? { backgroundImage: `url("${f.objectUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' } :
+          thumb ? { backgroundImage: `url("${thumb}")`, backgroundSize: 'cover', backgroundPosition: 'center' } :
+          { background: f.type === 'video' ? VIDEO_GRADIENT : isImage ? IMAGE_GRADIENT : MUSIC_GRADIENT }
         }
       >
         {!thumb && !isImage && (f.type === 'video' ? <Film size={20} strokeWidth={1.5} /> : <Music size={20} strokeWidth={1.5} />)}
@@ -225,7 +225,10 @@ export default function MediaLibrary() {
   const usedPercent = totalDisk > 0 ? Math.min(100, (usedDisk / totalDisk) * 100) : 0;
 
   const filtered = files.filter(f => {
-    const matchCat = activeCategory === 'all' || f.category === activeCategory;
+    const isImageFile = f.type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(f.name);
+    // If it's an image but wrongly categorized as video (due to old bug), treat its category as image
+    const effCat = (f.category === 'video' && isImageFile) ? 'image' : (f.category || f.type);
+    const matchCat = activeCategory === 'all' || effCat === activeCategory || (activeCategory === 'image' && isImageFile);
     const matchSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -253,11 +256,12 @@ export default function MediaLibrary() {
       });
     };
 
-    for (let f of selected) {
-      let type = uploadTab; // default
-      if (f.type.startsWith('audio/') || f.name.toLowerCase().endsWith('.m4a') || f.name.toLowerCase().endsWith('.mp3')) type = 'music';
-      else if (f.type.startsWith('image/')) type = 'image';
-      else if (f.type.startsWith('video/') || f.name.toLowerCase().endsWith('.mp4')) type = 'video';
+      for (let f of selected) {
+        let type = uploadTab; // default
+        const nameL = f.name.toLowerCase();
+        if (f.type.startsWith('audio/') || nameL.endsWith('.m4a') || nameL.endsWith('.mp3')) type = 'music';
+        else if (f.type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif)$/.test(nameL)) type = 'image';
+        else if (f.type.startsWith('video/') || nameL.endsWith('.mp4') || nameL.endsWith('.mkv')) type = 'video';
       
       const objectUrl = URL.createObjectURL(f);
       const duration = await getDuration(f, objectUrl, type);
@@ -327,7 +331,11 @@ export default function MediaLibrary() {
 
   const catStats = CATEGORIES.map(c => ({
     ...c,
-    count: c.id === 'all' ? files.length : files.filter(f => f.category === c.id || f.type === c.id).length,
+    count: c.id === 'all' ? files.length : files.filter(f => {
+      const isImageFile = f.type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(f.name);
+      const effCat = (f.category === 'video' && isImageFile) ? 'image' : (f.category || f.type);
+      return effCat === c.id || (c.id === 'image' && isImageFile);
+    }).length,
   }));
 
   return (
