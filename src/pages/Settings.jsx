@@ -3,7 +3,8 @@ import {
   User, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
   RefreshCw, Lock, Mail, LogOut, Bot, Server, Key, BrainCircuit,
-  Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap, X
+  Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap, X,
+  CheckCircle, AlertCircle, Wifi
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useYouTube } from '../hooks/useYouTubeStore';
@@ -475,40 +476,77 @@ const AI_PROVIDERS = [
 ];
 
 const AI_MODELS = {
-  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'],
-  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  anthropic: ['claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'],
-  grok: ['grok-2', 'grok-2-mini'],
-  groq: ['llama3-8b-8192', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma-7b-it'],
-  openrouter: ['google/gemini-2.5-flash', 'openai/gpt-4o', 'anthropic/claude-3-opus', 'meta-llama/llama-3-70b-instruct'],
-  custom: []
+  gemini: ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-1.5-pro','gemini-1.5-flash-8b'],
+  openai: ['gpt-4.1','gpt-4.1-mini','gpt-4o','gpt-4o-mini','gpt-4-turbo','gpt-3.5-turbo'],
+  anthropic: ['claude-opus-4-5','claude-sonnet-4-5','claude-haiku-4-5','claude-3-opus-20240229','claude-3-sonnet-20240229','claude-3-haiku-20240307'],
+  grok: ['grok-3','grok-3-mini','grok-2','grok-2-mini'],
+  groq: ['llama-3.3-70b-versatile','llama-3.1-8b-instant','gemma2-9b-it','mixtral-8x7b-32768'],
+  openrouter: ['google/gemini-2.5-flash','google/gemini-2.5-pro','openai/gpt-4o','anthropic/claude-3-opus','meta-llama/llama-3-70b-instruct'],
+  custom: [],
 };
 
 function AITab() {
-  const { config, updateConfig } = useAIStore();
+  const { config, updateConfig, fetchAvailableModels, testConnection } = useAIStore();
   const [provider, setProvider] = useState(config.provider || 'gemini');
   const [apiKey, setApiKey] = useState(config.apiKey || '');
   const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
   const [baseUrl, setBaseUrl] = useState(config.baseUrl || '');
-  
   const [saved, setSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
-
   const [showProvDrop, setShowProvDrop] = useState(false);
   const [showModDrop, setShowModDrop] = useState(false);
   const [modSearch, setModSearch] = useState('');
+  const [modelList, setModelList] = useState(AI_MODELS[config.provider || 'gemini'] || AI_MODELS.gemini);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState('');
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
 
   const activeProvider = AI_PROVIDERS.find(p => p.id === provider) || AI_PROVIDERS[0];
-  const modelOptions = AI_MODELS[provider] || [];
-  const filteredModels = modelOptions.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
-
+  const filteredModels = modelList.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
   const isDirty = provider !== config.provider || apiKey !== config.apiKey || modelName !== config.modelName || baseUrl !== config.baseUrl;
 
   const handleProviderSelect = (prov) => {
     setProvider(prov.id);
     setBaseUrl(prov.defaultBase);
-    setModelName(AI_MODELS[prov.id]?.[0] || '');
+    const defaults = AI_MODELS[prov.id] || [];
+    setModelList(defaults);
+    setModelName(defaults[0] || '');
     setShowProvDrop(false);
+    setFetchMsg('');
+    setTestResult(null);
+  };
+
+  const handleFetchModels = async () => {
+    setFetchingModels(true);
+    setFetchMsg('');
+    try {
+      const models = await fetchAvailableModels(provider, apiKey, baseUrl);
+      if (models.length > 0) {
+        setModelList(models);
+        if (!models.includes(modelName)) setModelName(models[0]);
+        setFetchMsg(`✓ ${models.length} model ditemukan`);
+      } else {
+        setFetchMsg('Tidak ada model ditemukan.');
+      }
+    } catch (e) {
+      setFetchMsg('Error: ' + e.message);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const reply = await testConnection({ provider, apiKey, modelName, baseUrl });
+      setTestResult({ ok: true, msg: `Koneksi berhasil! Respons: "${reply}"` });
+    } catch (e) {
+      setTestResult({ ok: false, msg: e.message });
+    } finally {
+      setTesting(false);
+    }
   };
 
   const handleSave = () => {
@@ -518,42 +556,36 @@ function AITab() {
   };
 
   return (
-    <div className="stab-section">
+    <div className="stab-section ai-tab-layout">
+      {/* Left card: Provider + Auth */}
       <div className="glass-card stab-card">
         <div className="stab-header">
           <Bot size={18} />
-          <h2>AI Assistants Configuration</h2>
+          <h2>Provider & Auth</h2>
         </div>
-        <p className="form-hint" style={{ marginBottom: '20px' }}>
-          Konfigurasi API untuk fitur Auto-Generate (Judul, Deskripsi, Tags) otomatis di menu Streams.
+        <p className="form-hint" style={{ marginBottom: '16px' }}>
+          Konfigurasi AI untuk fitur Auto-Generate di menu Streams.
         </p>
 
-        {/* AI Provider Dropdown */}
         <div className="form-group" style={{ position: 'relative' }}>
-          <label className="form-label"><Server size={14} /> AI Provider</label>
-          <div className="csm-rtmp-field" style={{ position: 'relative' }}>
+          <label className="form-label"><Server size={13} /> AI Provider</label>
+          <div style={{ position: 'relative' }}>
             <button
-              className="form-input"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)', cursor: 'pointer', textAlign: 'left', border: `1px solid ${activeProvider.color}44` }}
+              className="form-input ai-dropdown-btn"
+              style={{ borderColor: activeProvider.color + '55' }}
               onClick={() => setShowProvDrop(!showProvDrop)}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: activeProvider.color, display: 'flex', alignItems: 'center' }}>{activeProvider.icon}</span>
-                <span>{activeProvider.name}</span>
-              </div>
-              {showProvDrop ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              <span className="ai-drop-left">
+                <span style={{ color: activeProvider.color }}>{activeProvider.icon}</span>
+                {activeProvider.name}
+              </span>
+              {showProvDrop ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {showProvDrop && (
-              <div className="csm-platform-dropdown-v2" style={{ top: 'calc(100% + 4px)', left: 0, right: 0, width: '100%', maxHeight: '250px', overflowY: 'auto' }}>
+              <div className="csm-platform-dropdown-v2" style={{ top: 'calc(100% + 4px)', left: 0, right: 0, width: '100%', maxHeight: '220px', overflowY: 'auto' }}>
                 {AI_PROVIDERS.map(p => (
-                  <button
-                    key={p.id}
-                    className={`csm-pd-item ${provider === p.id ? 'active' : ''}`}
-                    onClick={() => handleProviderSelect(p)}
-                  >
-                    <span className="csm-pd-icon" style={{ background: p.color + '22', color: p.color }}>
-                      {p.icon}
-                    </span>
+                  <button key={p.id} className={`csm-pd-item ${provider === p.id ? 'active' : ''}`} onClick={() => handleProviderSelect(p)}>
+                    <span className="csm-pd-icon" style={{ background: p.color + '22', color: p.color }}>{p.icon}</span>
                     <span className="csm-pd-label">{p.name}</span>
                     {provider === p.id && <span className="csm-pd-check">✓</span>}
                   </button>
@@ -563,72 +595,75 @@ function AITab() {
           </div>
         </div>
 
-        {/* Custom Base URL (shown only if needed) */}
-        {(provider === 'custom' || provider === 'openai' || provider === 'groq' || provider === 'grok' || provider === 'openrouter' || provider === 'anthropic') && (
+        {provider !== 'gemini' && (
           <div className="form-group">
-            <label className="form-label"><Link2 size={14} /> {provider === 'custom' ? 'Custom Endpoint URL' : 'API Base URL'}</label>
-            <input
-              className="form-input"
-              type="text"
-              value={baseUrl}
-              onChange={e => setBaseUrl(e.target.value)}
-              placeholder="https://api.example.com/v1"
-            />
+            <label className="form-label"><Link2 size={13} /> {provider === 'custom' ? 'Custom Endpoint URL' : 'API Base URL'}</label>
+            <input className="form-input" type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" />
           </div>
         )}
 
-        {/* Model Selection Dropdown */}
+        <div className="form-group">
+          <label className="form-label"><Key size={13} /> API Key</label>
+          <div className="pw-field">
+            <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Masukkan API key..." />
+            <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
+              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+        </div>
+
+        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved}>
+          {saved ? <><Check size={14} /> Tersimpan!</> : <><Save size={14} /> Simpan Konfigurasi</>}
+        </button>
+      </div>
+
+      {/* Right card: Model + Test */}
+      <div className="glass-card stab-card">
+        <div className="stab-header">
+          <BrainCircuit size={18} />
+          <h2>Model & Test</h2>
+        </div>
+
         <div className="form-group" style={{ position: 'relative' }}>
-          <label className="form-label"><BrainCircuit size={14} /> {provider === 'custom' ? 'Custom Model Name' : 'Model'}</label>
-          
-          {provider === 'custom' ? (
-            <input
-              className="form-input"
-              type="text"
-              value={modelName}
-              onChange={e => setModelName(e.target.value)}
-              placeholder="model-name"
-            />
-          ) : (
-            <div className="csm-rtmp-field" style={{ position: 'relative' }}>
-              <button
-                className="form-input"
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg-card-hover)', cursor: 'pointer', textAlign: 'left' }}
-                onClick={() => { setShowModDrop(!showModDrop); setModSearch(''); }}
-              >
-                <span>{modelName || 'Select a model...'}</span>
-                {showModDrop ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <div className="ai-model-label-row">
+            <label className="form-label" style={{ margin: 0 }}><BrainCircuit size={13} /> {provider === 'custom' ? 'Custom Model Name' : 'Model'}</label>
+            {provider !== 'custom' && (
+              <button className="btn btn-secondary btn-sm ai-reload-btn" onClick={handleFetchModels} disabled={fetchingModels || !apiKey} title="Fetch model terbaru dari API">
+                <RefreshCw size={12} className={fetchingModels ? 'spin' : ''} />
+                {fetchingModels ? 'Fetching...' : 'Reload Model'}
               </button>
-              
+            )}
+          </div>
+          {fetchMsg && (
+            <p style={{ fontSize: '11px', marginTop: '4px', color: fetchMsg.startsWith('Error') ? 'var(--accent-red)' : '#2dd4a8' }}>{fetchMsg}</p>
+          )}
+          {provider === 'custom' ? (
+            <input className="form-input" style={{ marginTop: '6px' }} type="text" value={modelName} onChange={e => setModelName(e.target.value)} placeholder="model-name" />
+          ) : (
+            <div style={{ position: 'relative', marginTop: '6px' }}>
+              <button className="form-input ai-dropdown-btn" onClick={() => { setShowModDrop(!showModDrop); setModSearch(''); }}>
+                <span className="ai-drop-left" style={{ fontFamily: 'monospace', fontSize: '13px' }}>{modelName || 'Pilih model...'}</span>
+                {showModDrop ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </button>
               {showModDrop && (
-                <div className="csm-platform-dropdown-v2" style={{ top: 'calc(100% + 4px)', left: 0, right: 0, width: '100%', padding: '0', overflow: 'hidden' }}>
-                  <div style={{ padding: '8px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Search size={14} style={{ color: 'var(--text-muted)' }} />
-                    <input 
-                      type="text" 
-                      placeholder="Search model..." 
-                      value={modSearch} 
-                      onChange={e => setModSearch(e.target.value)}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--text-color)', width: '100%', outline: 'none', fontSize: '13px' }}
-                      autoFocus
-                    />
+                <div className="csm-platform-dropdown-v2" style={{ top: 'calc(100% + 4px)', left: 0, right: 0, width: '100%', padding: 0, overflow: 'hidden' }}>
+                  <div style={{ padding: '8px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Search size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                    <input type="text" placeholder="Cari model..." value={modSearch} onChange={e => setModSearch(e.target.value)}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--text-color)', width: '100%', outline: 'none', fontSize: '12px' }} autoFocus />
                   </div>
                   <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                    {filteredModels.length === 0 ? (
-                      <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>Model not found.</div>
-                    ) : (
-                      filteredModels.map(m => (
-                        <button
-                          key={m}
-                          className={`csm-pd-item ${modelName === m ? 'active' : ''}`}
+                    {filteredModels.length === 0
+                      ? <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>Model tidak ditemukan.</div>
+                      : filteredModels.map(m => (
+                        <button key={m} className={`csm-pd-item ${modelName === m ? 'active' : ''}`}
                           onClick={() => { setModelName(m); setShowModDrop(false); }}
-                          style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-color)22' }}
-                        >
-                          <span className="csm-pd-label">{m}</span>
+                          style={{ padding: '9px 12px' }}>
+                          <span className="csm-pd-label" style={{ fontFamily: 'monospace', fontSize: '12px' }}>{m}</span>
                           {modelName === m && <span className="csm-pd-check">✓</span>}
                         </button>
                       ))
-                    )}
+                    }
                   </div>
                 </div>
               )}
@@ -637,25 +672,25 @@ function AITab() {
         </div>
 
         <div className="form-group">
-          <label className="form-label"><Key size={14} /> API Key</label>
-          <div className="pw-field">
-            <input
-              className="form-input"
-              type={showKey ? 'text' : 'password'}
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="Enter your API key"
-            />
-            <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
-              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
-            </button>
-          </div>
+          <label className="form-label"><Wifi size={13} /> Test Koneksi</label>
+          <p className="form-hint">Kirim request kecil untuk memverifikasi API key &amp; model valid.</p>
+          <button
+            className="btn btn-secondary stab-save-btn"
+            style={{ marginTop: '8px', width: '100%' }}
+            onClick={handleTest}
+            disabled={testing || !apiKey || !modelName}
+          >
+            {testing ? <><RefreshCw size={14} className="spin" /> Testing...</> : <><Wifi size={14} /> Test Koneksi</>}
+          </button>
+          {testResult && (
+            <div className={`ai-test-result ${testResult.ok ? 'ok' : 'err'}`}>
+              {testResult.ok ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+              <span>{testResult.msg}</span>
+            </div>
+          )}
         </div>
-
-        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved} style={{ marginTop: '16px' }}>
-          {saved ? <><Check size={15} /> Tersimpan!</> : <><Save size={15} /> Save</>}
-        </button>
       </div>
     </div>
   );
 }
+
