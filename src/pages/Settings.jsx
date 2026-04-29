@@ -2,17 +2,19 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   User, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
-  RefreshCw, Lock, Mail, LogOut,
+  RefreshCw, Lock, Mail, LogOut, Bot, Server, Key, BrainCircuit,
   Unlink
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useYouTube } from '../hooks/useYouTubeStore';
+import { useAIStore } from '../hooks/useAIStore';
 import './Settings.css';
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'security', label: 'Security', icon: Shield },
   { id: 'integration', label: 'Integration', icon: Link2 },
+  { id: 'ai', label: 'AI Assistants', icon: Bot },
   { id: 'about', label: 'About', icon: Info },
 ];
 
@@ -49,6 +51,7 @@ export default function Settings() {
         {activeTab === 'profile' && <ProfileTab />}
         {activeTab === 'security' && <SecurityTab />}
         {activeTab === 'integration' && <IntegrationTab />}
+        {activeTab === 'ai' && <AITab />}
         {activeTab === 'about' && <AboutTab />}
       </div>
     </div>
@@ -456,6 +459,90 @@ function AboutTab() {
             media library, playlist, overlays, dan multi-akun dalam satu aplikasi.
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+/* ─── AI Assistants Tab ─── */
+function AITab() {
+  const { config, updateConfig } = useAIStore();
+  const [provider, setProvider] = useState(config.provider);
+  const [apiKey, setApiKey] = useState(config.apiKey);
+  const [modelName, setModelName] = useState(config.modelName);
+  const [baseUrl, setBaseUrl] = useState(config.baseUrl);
+  const [saved, setSaved] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  const isDirty = provider !== config.provider || apiKey !== config.apiKey || modelName !== config.modelName || baseUrl !== config.baseUrl;
+
+  const handleSave = () => {
+    updateConfig({ provider, apiKey: apiKey.trim(), modelName: modelName.trim(), baseUrl: baseUrl.trim() });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="stab-section">
+      <div className="glass-card stab-card">
+        <div className="stab-header">
+          <Bot size={18} />
+          <h2>AI Assistants Configuration</h2>
+        </div>
+        <p className="form-hint" style={{ marginBottom: '20px' }}>
+          Konfigurasi API untuk fitur Auto-Generate (Judul, Deskripsi, Tags) otomatis di menu Streams.
+        </p>
+
+        <div className="form-group">
+          <label className="form-label"><Server size={14} /> AI Provider</label>
+          <select className="form-input" value={provider} onChange={e => setProvider(e.target.value)}>
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI / Custom Endpoint (Groq, Together, dll)</option>
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label"><Key size={14} /> API Key</label>
+          <div className="pw-field">
+            <input
+              className="form-input"
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              placeholder={`Masukkan rahasia API Key ${provider === 'gemini' ? 'Gemini' : 'OpenAI'}`}
+            />
+            <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
+              {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label"><BrainCircuit size={14} /> Model Name</label>
+          <input
+            className="form-input"
+            type="text"
+            value={modelName}
+            onChange={e => setModelName(e.target.value)}
+            placeholder={provider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o'}
+          />
+        </div>
+
+        {provider === 'openai' && (
+          <div className="form-group">
+            <label className="form-label"><Link2 size={14} /> Base URL</label>
+            <input
+              className="form-input"
+              type="text"
+              value={baseUrl}
+              onChange={e => setBaseUrl(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+            />
+          </div>
+        )}
+
+        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved}>
+          {saved ? <><Check size={15} /> Tersimpan!</> : <><Save size={15} /> Simpan Konfigurasi</>}
+        </button>
       </div>
     </div>
   );

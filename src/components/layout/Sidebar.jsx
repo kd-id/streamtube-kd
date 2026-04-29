@@ -14,7 +14,7 @@ const navItems = [
   { path: '/media', icon: FolderOpen, label: 'Media' },
   { path: '/playlist', icon: ListMusic, label: 'Playlist' },
   { path: '/overlays', icon: Layers, label: 'Overlays' },
-  { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+
   { path: '/monetization', icon: DollarSign, label: 'Monetization' },
   { path: '/logs', icon: Bug, label: 'Logs' },
   { path: '/settings', icon: Settings, label: 'Settings' },
@@ -25,7 +25,7 @@ const mobileNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'Home' },
   { path: '/streams', icon: Radio, label: 'Streams' },
   { path: '/media', icon: FolderOpen, label: 'Media' },
-  { path: '/analytics', icon: BarChart3, label: 'Analytics' },
+
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 

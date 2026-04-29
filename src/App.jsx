@@ -6,7 +6,7 @@ import OAuthCallback from './pages/OAuthCallback';
 import Dashboard from './pages/Dashboard';
 import Streams from './pages/Streams';
 import Overlays from './pages/Overlays';
-import Analytics from './pages/Analytics';
+
 import Monetization from './pages/Monetization';
 import Settings from './pages/Settings';
 import MediaLibrary from './pages/MediaLibrary';
@@ -25,7 +25,7 @@ export default function App() {
           <Route path="/media" element={<MediaLibrary />} />
           <Route path="/playlist" element={<Playlist />} />
           <Route path="/overlays" element={<Overlays />} />
-          <Route path="/analytics" element={<Analytics />} />
+
           <Route path="/monetization" element={<Monetization />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/logs" element={<LogViewer />} />
