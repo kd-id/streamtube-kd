@@ -779,9 +779,20 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       const keywordCtx = aiKeyword ? ` Focus on these keywords: "${aiKeyword}".` : '';
       let prompt = '';
       if (field === 'title') {
-        prompt = `Generate 5 highly engaging, clickbait but relevant YouTube live stream titles in English about "${context}".${keywordCtx} Max 60 characters each. Separate each option ONLY with "|||" without numbering or extra text.`;
+        prompt = `Generate 5 highly engaging, clickbait but relevant YouTube live stream titles in English about "${context}".${keywordCtx} STRICTLY use this pattern for the titles: [Main Keyword] + [Benefit] + [Hook/Emotion]. Max 60 characters each. Separate each option ONLY with "|||" without numbering or extra text.`;
       } else if (field === 'description') {
-        prompt = `Generate 3 professional, SEO friendly YouTube live stream descriptions in English about "${context}".${keywordCtx} Include a call to action to subscribe. Separate each option ONLY with "|||" without numbering or extra text.`;
+        prompt = `Generate 3 professional, elegant, and human-like YouTube live stream descriptions in English about "${context}".${keywordCtx} Format EACH description EXACTLY like this structure:
+1. A short, engaging hook sentence with 1 emoji.
+2. An empty line.
+3. A brief intro sentence followed by a bulleted list (using •) of 3-4 benefits/features with occasional emojis.
+4. An empty line.
+5. A special note with an emoji (e.g., 🎧 Use headphones for the best experience).
+6. An empty line.
+7. 1-2 immersive sentences describing the vibe or value.
+8. A call to action or final note.
+9. An empty line.
+10. A block of 5-7 relevant hashtags at the bottom.
+Do NOT sound like a generic AI. Make it aesthetic, neat, and highly readable. Separate each generated description option ONLY with "|||" without numbering or extra text.`;
       } else if (field === 'tags') {
         prompt = `Generate 5 different sets of 15 YouTube tags in English about "${context}".${keywordCtx} Separate each set ONLY with "|||" without numbering. Inside each set, separate tags with commas.`;
       }
