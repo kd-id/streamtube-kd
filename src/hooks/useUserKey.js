@@ -45,7 +45,8 @@ export function writeUserData(baseKey, value) {
     const promise = fetch('/api/userdata', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ action: 'set', key: finalKey, value })
+      body: JSON.stringify({ action: 'set', key: finalKey, value }),
+      keepalive: true
     }).catch(err => console.error('Failed to sync user data', err));
     // Track pending writes
     if (!window.__pendingWrites) window.__pendingWrites = [];
@@ -76,12 +77,10 @@ export async function syncUserDataFromServer(token) {
       let changed = false;
       for (const [k, v] of Object.entries(data.data)) {
         const local = localStorage.getItem(k);
-        if (local === null || local === undefined) {
-          // Only write from server if localStorage is EMPTY for this key (first login / new device)
+        if (local !== v) {
           localStorage.setItem(k, v);
           changed = true;
         }
-        // If localStorage already has data, keep local version (it's newer or same)
       }
       return changed;
     }
