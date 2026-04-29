@@ -4,7 +4,7 @@ import {
   Wifi, Gauge, MonitorPlay, AlertTriangle, Users, ExternalLink,
   Image as ImageIcon, Clock, DollarSign, Tag, ChevronDown, Film,
   Music, ListMusic, Terminal, Link2, Key, Copy, Check, RefreshCw, RotateCcw,
-  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2, Sparkles
+  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2, Sparkles, Zap
 } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import ShareModal from '../components/ShareModal';
@@ -762,8 +762,8 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [rtmpUrl, setRtmpUrl] = useState('rtmp://a.rtmp.youtube.com/live2');
   const [streamKey, setStreamKey] = useState('');
   
-  const { config: aiConfig, generateText, getEffectiveKey } = useAIStore();
-  const [generatingField, setGeneratingField] = useState(null);
+  const { config: aiConfig, generateText, generateAllMeta, getEffectiveKey } = useAIStore();
+  const [generatingField, setGeneratingField] = useState(null); // 'title'|'description'|'tags'|'all'
   const [aiSuggestion, setAiSuggestion] = useState(null);
   const [aiKeyword, setAiKeyword] = useState('');
 
@@ -835,6 +835,30 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
       setAiSuggestion({ field, options });
     } catch (err) {
       alert(`Failed to generate ${field}: ${err.message}`);
+    } finally {
+      setGeneratingField(null);
+    }
+  };
+
+  const handleGenerateAll = async () => {
+    try {
+      const effectiveKey = getEffectiveKey(aiConfig.provider);
+      if (!effectiveKey) {
+        alert('AI API Key is not set. Please configure it in Settings > AI Assistants.');
+        return;
+      }
+      setGeneratingField('all');
+      const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
+      const { title: genTitle, description: genDesc, tags: genTags } = await generateAllMeta({
+        context: context || 'YouTube Live Stream',
+        keywords: aiKeyword,
+      });
+      // Apply all three at once
+      if (genTitle) setTitle(genTitle);
+      if (genDesc) setDescription(genDesc);
+      if (genTags?.length) setTags(genTags);
+    } catch (err) {
+      alert(`Failed to generate metadata: ${err.message}`);
     } finally {
       setGeneratingField(null);
     }
@@ -1249,7 +1273,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                       </>
                     )}
                     {filteredPlaylists.length === 0 && filteredVideos.length === 0 && (
-                      <div className="csm-video-empty">Tidak ada media ditemukan</div>
+                      <div className="csm-video-empty">No media found</div>
                     )}
                   </div>
                 </div>
@@ -1257,10 +1281,26 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
             </div>
 
             <div className="form-group" style={{ background: 'rgba(168, 85, 247, 0.05)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
-              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#c084fc', marginBottom: '8px' }}>
-                <Sparkles size={12} /> AI Keywords (Optional)
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#c084fc', marginBottom: 0 }}>
+                  <Sparkles size={12} /> AI Keywords (Optional)
+                </label>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleGenerateAll}
+                  disabled={!!generatingField}
+                  title="Generate title, description & tags in one click"
+                  style={{ padding: '4px 10px', fontSize: '11px', height: '26px', gap: '4px', display: 'flex', alignItems: 'center', background: 'linear-gradient(135deg, #7c3aed, #a855f7)', border: 'none' }}
+                >
+                  {generatingField === 'all'
+                    ? <><RefreshCw size={11} className="spin" /> Generating...</>
+                    : <><Zap size={11} /> Generate All</>}
+                </button>
+              </div>
               <input className="form-input" value={aiKeyword} onChange={e => setAiKeyword(e.target.value)} placeholder="e.g. gaming, tutorial, music..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
+              <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
+                ⚡ Generate All fills title, description &amp; tags in <strong>one API request</strong> — saves tokens &amp; uses cache.
+              </p>
             </div>
 
             <div className="form-group">

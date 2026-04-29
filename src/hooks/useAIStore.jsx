@@ -3,6 +3,28 @@ import { readUserData, writeUserData } from './useUserKey';
 
 const AI_KEY = 'streamtube_ai_settings';
 
+// Session-level cache: key = "provider|model|context|keywords" → { title, description, tags, ts }
+const _aiCache = new Map();
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function getCacheKey(provider, model, context, keywords) {
+  return `${provider}|${model}|${context}|${keywords || ''}`.toLowerCase().trim();
+}
+function getFromCache(key) {
+  const hit = _aiCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > CACHE_TTL_MS) { _aiCache.delete(key); return null; }
+  return hit.data;
+}
+function setCache(key, data) {
+  _aiCache.set(key, { data, ts: Date.now() });
+  // Keep cache size reasonable
+  if (_aiCache.size > 50) {
+    const oldest = _aiCache.keys().next().value;
+    _aiCache.delete(oldest);
+  }
+}
+
 const initialState = {
   provider: 'gemini',
   apiKey: '', 
@@ -405,5 +427,57 @@ export function useAIStore() {
     throw lastError || new Error(`All ${state.provider} models are unavailable or rate limited. Please try again later or switch API key.`);
   };
 
-  return { config: state, updateConfig, generateText, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels };
+  /**
+   * Generate title + description + tags in a SINGLE API call.
+   * Returns { title, description, tags[] }
+   * Uses session cache to avoid re-generating identical requests.
+   */
+  const generateAllMeta = async ({ context, keywords = '' } = {}) => {
+    const key = getEffectiveKey(state.provider);
+    if (!key) throw new Error('AI API Key is not set. Please configure it in Settings > AI Assistants.');
+    const cleanModel = sanitizeModel(state.modelName);
+
+    // Check cache first
+    const cacheKey = getCacheKey(state.provider, cleanModel, context, keywords);
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      console.log('[AI] ✓ Cache hit for:', context);
+      return cached;
+    }
+
+    const keywordLine = keywords ? `\nFocus keywords: ${keywords}` : '';
+
+    const prompt = `You are a YouTube SEO expert. Generate metadata for a YouTube video/live stream titled: "${context}"${keywordLine}
+
+Respond ONLY in this exact format with no extra text, no markdown, no numbering:
+
+TITLE: <one engaging, slightly clickbait title, max 60 chars>
+---
+DESCRIPTION: <SEO-optimized, natural, slightly clickbait description in American English. 150-250 words. Casual tone, hook opening, 3-4 bullet points using •, call-to-action, 5-6 relevant hashtags at the end>
+---
+TAGS: <15 relevant comma-separated YouTube search tags, no generic tags like "video" or "youtube">`;
+
+    const result = await generateText(prompt);
+
+    // Parse structured response
+    const titleMatch = result.match(/TITLE:\s*(.+?)(?:\n|$)/i);
+    const descMatch = result.match(/DESCRIPTION:\s*([\.\s\S]+?)(?:---|$)/i);
+    const tagsMatch = result.match(/TAGS:\s*(.+?)(?:\n|$)/is);
+
+    const title = titleMatch?.[1]?.replace(/^["'`]|["'`]$/g, '').trim() || '';
+    const description = descMatch?.[1]?.trim() || '';
+    const tagsRaw = tagsMatch?.[1]?.trim() || '';
+    const tags = tagsRaw.split(',').map(t => t.trim()).filter(t => t.length > 0).slice(0, 15);
+
+    if (!title && !description && !tags.length) {
+      throw new Error('AI returned an unexpected format. Please try again.');
+    }
+
+    const data = { title, description, tags };
+    setCache(cacheKey, data);
+    console.log('[AI] ✓ Generated & cached metadata for:', context);
+    return data;
+  };
+
+  return { config: state, updateConfig, generateText, generateAllMeta, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels };
 }
