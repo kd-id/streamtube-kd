@@ -777,24 +777,38 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       
       const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
       const keywordCtx = aiKeyword ? ` Focus on these keywords: "${aiKeyword}".` : '';
+      const descContext = description ? ` Current description: "${description.substring(0, 200)}".` : '';
       let prompt = '';
       if (field === 'title') {
         prompt = `Generate 5 highly engaging, clickbait but relevant YouTube live stream titles in English about "${context}".${keywordCtx} STRICTLY use this pattern for the titles: [Main Keyword] + [Benefit] + [Hook/Emotion]. Max 60 characters each. Separate each option ONLY with "|||" without numbering or extra text.`;
       } else if (field === 'description') {
-        prompt = `Generate 3 professional, elegant, and human-like YouTube live stream descriptions in English about "${context}".${keywordCtx} Format EACH description EXACTLY like this structure:
-1. A short, engaging hook sentence with 1 emoji.
-2. An empty line.
-3. A brief intro sentence followed by a bulleted list (using •) of 3-4 benefits/features with occasional emojis.
-4. An empty line.
-5. A special note with an emoji (e.g., 🎧 Use headphones for the best experience).
-6. An empty line.
-7. 1-2 immersive sentences describing the vibe or value.
-8. A call to action or final note.
-9. An empty line.
-10. A block of 5-7 relevant hashtags at the bottom.
-Do NOT sound like a generic AI. Make it aesthetic, neat, and highly readable. Separate each generated description option ONLY with "|||" without numbering or extra text.`;
+        prompt = `Buatkan 3 deskripsi YouTube yang SEO-friendly, natural, dan sedikit clickbait (gak kaku, terasa ditulis manusia bukan AI) untuk video/live stream berjudul "${context}".${keywordCtx}
+
+Aturan penting:
+- Gaya bahasa: santai tapi profesional, kayak teman yang ngerti topiknya
+- Kalimat pembuka HARUS bikin penasaran atau menyentuh emosi penonton (hook kuat!)
+- Sisipkan keyword utama secara natural di paragraf pertama
+- Gunakan emoji secukupnya (jangan berlebihan, 3-5 emoji per deskripsi)
+- Tambahkan bullet points (gunakan •) untuk highlight 3-4 poin penting
+- Akhiri dengan call-to-action yang natural (misal: "Jangan lupa subscribe biar gak ketinggalan!")
+- Tambahkan 5-7 hashtag relevan di baris terakhir
+- Panjang ideal: 150-300 kata per deskripsi
+- JANGAN terdengar generic atau template-an
+- Tulis dalam Bahasa Indonesia yang casual tapi tetap informatif
+
+Format output: Pisahkan setiap opsi deskripsi HANYA dengan "|||" tanpa penomoran atau teks tambahan.`;
       } else if (field === 'tags') {
-        prompt = `Generate 5 different sets of 15 YouTube tags in English about "${context}".${keywordCtx} Separate each set ONLY with "|||" without numbering. Inside each set, separate tags with commas.`;
+        prompt = `Buatkan 5 set tags YouTube (masing-masing 15 tags) yang sangat relevan untuk video/live stream ini:
+Judul: "${context}"${descContext}${keywordCtx}
+
+Aturan:
+- Tags HARUS berhubungan langsung dengan judul dan konten
+- Campurkan: broad tags (volume tinggi) + specific/long-tail tags + trending tags
+- Jangan pakai tags yang terlalu generic seperti "video" atau "youtube"
+- Gunakan bahasa yang sesuai dengan target audiens (campuran Indonesia & English boleh)
+- Prioritaskan tags yang orang benar-benar cari di YouTube
+
+Pisahkan setiap set HANYA dengan "|||" tanpa penomoran. Di dalam setiap set, pisahkan tags dengan koma.`;
       }
 
       const result = await generateText(prompt);

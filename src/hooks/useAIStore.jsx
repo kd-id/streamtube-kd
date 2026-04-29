@@ -238,6 +238,32 @@ export function useAIStore() {
     return data.choices?.[0]?.message?.content?.trim() || 'OK';
   }, [state.customBodyTemplate, state.customResponsePath]);
 
+  // Gemini fallback models ordered by availability (flash models have higher free-tier quotas)
+  const GEMINI_FALLBACK_MODELS = [
+    'gemini-2.0-flash',
+    'gemini-2.5-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-8b',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro',
+  ];
+
+  const callGeminiAPI = async (model, key, promptText) => {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: { temperature: 0.7 },
+        }),
+      }
+    );
+    const data = await res.json();
+    return { data, status: res.status };
+  };
+
   const generateText = async (promptText) => {
     const key = getEffectiveKey(state.provider);
     if (!key) throw new Error('API Key belum diatur di Settings > AI Assistants.');
@@ -246,20 +272,46 @@ export function useAIStore() {
 
     try {
       if (state.provider === 'gemini') {
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${key}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: promptText }] }],
-              generationConfig: { temperature: 0.7 },
-            }),
+        // Try the selected model first
+        const { data, status } = await callGeminiAPI(cleanModel, key, promptText);
+        
+        // If success, return immediately
+        if (!data.error && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          return data.candidates[0].content.parts[0].text;
+        }
+
+        // If 429 or 503, try fallback models
+        if (data.error && (data.error.code === 429 || data.error.code === 503 || status === 429 || status === 503)) {
+          console.warn(`[AI] Model "${cleanModel}" returned ${data.error.code || status}. Trying fallback models...`);
+          
+          const fallbacks = GEMINI_FALLBACK_MODELS.filter(m => m !== cleanModel);
+          for (const fallbackModel of fallbacks) {
+            try {
+              // Small delay to avoid hitting rate limits immediately
+              await new Promise(r => setTimeout(r, 1000));
+              console.log(`[AI] Trying fallback model: ${fallbackModel}`);
+              const fb = await callGeminiAPI(fallbackModel, key, promptText);
+              if (!fb.data.error && fb.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                console.log(`[AI] ✓ Fallback model "${fallbackModel}" succeeded!`);
+                return fb.data.candidates[0].content.parts[0].text;
+              }
+              if (fb.data.error && (fb.data.error.code === 429 || fb.data.error.code === 503)) {
+                console.warn(`[AI] Fallback "${fallbackModel}" also rate limited, trying next...`);
+                continue;
+              }
+              if (fb.data.error) {
+                console.warn(`[AI] Fallback "${fallbackModel}" error: ${fb.data.error.message}`);
+                continue;
+              }
+            } catch (fbErr) {
+              console.warn(`[AI] Fallback "${fallbackModel}" failed:`, fbErr.message);
+              continue;
+            }
           }
-        );
-        const data = await res.json();
+          throw new Error(`Semua model Gemini sedang rate limited (429/503). Coba lagi dalam beberapa menit, atau ganti API key.`);
+        }
+
         if (data.error) {
-          if (data.error.code === 429) throw new Error('Quota API habis atau model ini tidak tersedia untuk free tier. Silakan ganti model (misal ke flash) atau gunakan API key lain.');
           throw new Error(data.error.message || 'Gemini API Error');
         }
         return data.candidates[0].content.parts[0].text;
