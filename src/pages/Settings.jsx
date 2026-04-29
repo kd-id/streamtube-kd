@@ -472,6 +472,7 @@ const AI_PROVIDERS = [
   { id: 'grok',       name: 'xAI Grok',            short: 'Grok',      icon: <X size={18}/>,            color: '#a0a0a0', grad: 'linear-gradient(135deg,#555,#888)',       defaultBase: 'https://api.x.ai/v1' },
   { id: 'groq',       name: 'Groq',                short: 'Groq',      icon: <Cpu size={18}/>,          color: '#f55036', grad: 'linear-gradient(135deg,#f55036,#ff7055)', defaultBase: 'https://api.groq.com/openai/v1' },
   { id: 'openrouter', name: 'OpenRouter',          short: 'Router',    icon: <Network size={18}/>,      color: '#3b82f6', grad: 'linear-gradient(135deg,#3b82f6,#6366f1)', defaultBase: 'https://openrouter.ai/api/v1' },
+  { id: 'devin',      name: 'Devin.ai',            short: 'Devin',     icon: <Terminal size={18}/>,     color: '#f5a623', grad: 'linear-gradient(135deg,#f5a623,#f8e71c)', defaultBase: 'https://api.devin.ai/v1' },
   { id: 'custom',     name: 'Custom',              short: 'Custom',    icon: <Server size={18}/>,       color: '#8b5cf6', grad: 'linear-gradient(135deg,#8b5cf6,#a78bfa)', defaultBase: '' },
 ];
 
@@ -482,15 +483,24 @@ const AI_MODELS = {
   grok:       ['grok-3','grok-3-mini','grok-2','grok-2-mini'],
   groq:       ['llama-3.3-70b-versatile','llama-3.1-8b-instant','gemma2-9b-it','mixtral-8x7b-32768'],
   openrouter: ['google/gemini-2.5-flash','google/gemini-2.5-pro','openai/gpt-4o','anthropic/claude-3-opus','meta-llama/llama-3-70b-instruct'],
+  devin:      ['devin-session'], // placeholder
   custom:     [],
 };
 
 function AITab() {
-  const { config, updateConfig, fetchAvailableModels, testConnection } = useAIStore();
+  const { config, updateConfig, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase } = useAIStore();
   const [provider, setProvider] = useState(config.provider || 'gemini');
-  const [apiKey, setApiKey] = useState(config.apiKey || '');
+  
+  // Load initial key and base for the selected provider
+  const initialKey = getEffectiveKey(config.provider || 'gemini');
+  const initialBase = getEffectiveBase(config.provider || 'gemini');
+
+  const [apiKey, setApiKey] = useState(initialKey);
   const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
-  const [baseUrl, setBaseUrl] = useState(config.baseUrl || '');
+  const [baseUrl, setBaseUrl] = useState(initialBase);
+  const [customTemplate, setCustomTemplate] = useState(config.customBodyTemplate || '');
+  const [customPath, setCustomPath] = useState(config.customResponsePath || '');
+
   const [saved, setSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [modSearch, setModSearch] = useState('');
@@ -502,11 +512,24 @@ function AITab() {
 
   const activeProvider = AI_PROVIDERS.find(p => p.id === provider) || AI_PROVIDERS[0];
   const filteredModels = modelList.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
-  const isDirty = provider !== config.provider || apiKey !== config.apiKey || modelName !== config.modelName || baseUrl !== config.baseUrl;
+  
+  const isDirty = provider !== config.provider || 
+                  apiKey !== getEffectiveKey(config.provider) || 
+                  modelName !== config.modelName || 
+                  baseUrl !== getEffectiveBase(config.provider) ||
+                  customTemplate !== config.customBodyTemplate ||
+                  customPath !== config.customResponsePath;
 
   const handleProviderSelect = (prov) => {
     setProvider(prov.id);
-    setBaseUrl(prov.defaultBase);
+    
+    // Auto-populate devin's key if empty
+    let newKey = getEffectiveKey(prov.id);
+    if (prov.id === 'devin' && !newKey) newKey = 'apk_b3JnLWIxOTJiMTMxMDUzNjQ5MTFhZjQwMmUxYWE2MzMxZjQ3OjU2MDlkYzFhYzU0MzRiMTg4N2RmZWQxYzlhZjg3NDNk';
+    
+    setApiKey(newKey);
+    setBaseUrl(getEffectiveBase(prov.id) || prov.defaultBase);
+    
     const defaults = AI_MODELS[prov.id] || [];
     setModelList(defaults);
     setModelName(defaults[0] || '');
@@ -530,14 +553,21 @@ function AITab() {
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const reply = await testConnection({ provider, apiKey, modelName, baseUrl });
+      const reply = await testConnection({ provider, apiKey, modelName, baseUrl, customTemplate, customPath });
       setTestResult({ ok: true, msg: `Koneksi berhasil! Response: "${reply}"` });
     } catch (e) { setTestResult({ ok: false, msg: e.message }); }
     finally { setTesting(false); }
   };
 
   const handleSave = () => {
-    updateConfig({ provider, apiKey: apiKey.trim(), modelName: modelName.trim(), baseUrl: baseUrl.trim() });
+    updateConfig({ 
+      provider, 
+      apiKey: apiKey.trim(), 
+      modelName: modelName.trim(), 
+      baseUrl: baseUrl.trim(),
+      customBodyTemplate: customTemplate,
+      customResponsePath: customPath.trim()
+    });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -596,6 +626,34 @@ function AITab() {
           </div>
         </div>
 
+        {/* Custom JSON Templating */}
+        {provider === 'custom' && (
+          <>
+            <div className="form-group">
+              <label className="form-label"><Code size={13} /> JSON Body Template</label>
+              <textarea 
+                className="form-input" 
+                style={{ fontFamily: 'monospace', minHeight: '80px', fontSize: '11px', whiteSpace: 'pre' }} 
+                value={customTemplate} 
+                onChange={e => setCustomTemplate(e.target.value)} 
+                placeholder={`{\n  "messages": [\n    { "role": "user", "content": "{{PROMPT}}" }\n  ],\n  "model": "{{MODEL}}"\n}`} 
+              />
+              <p className="ai-fetch-msg" style={{color: 'var(--text-muted)'}}>Gunakan <code>{`{{PROMPT}}`}</code> dan <code>{`{{MODEL}}`}</code> sebagai placeholder.</p>
+            </div>
+            <div className="form-group">
+              <label className="form-label"><ArrowRight size={13} /> Response Extraction Path</label>
+              <input 
+                className="form-input" 
+                type="text" 
+                value={customPath} 
+                onChange={e => setCustomPath(e.target.value)} 
+                placeholder="choices[0].message.content" 
+                style={{ fontFamily: 'monospace', fontSize: '11px' }}
+              />
+            </div>
+          </>
+        )}
+
         <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved}>
           {saved ? <><Check size={14} /> Tersimpan!</> : <><Save size={14} /> Simpan Konfigurasi</>}
         </button>
@@ -612,7 +670,7 @@ function AITab() {
         <div className="form-group">
           <div className="ai-model-label-row">
             <label className="form-label" style={{ margin: 0 }}><BrainCircuit size={13} /> Model</label>
-            {provider !== 'custom' && (
+            {provider !== 'custom' && provider !== 'devin' && (
               <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !apiKey} title="Fetch model terbaru dari API">
                 <RefreshCw size={12} className={fetchingModels ? 'spin' : ''} />
                 {fetchingModels ? 'Fetching...' : 'Update List'}
@@ -621,7 +679,7 @@ function AITab() {
           </div>
 
           {/* Search */}
-          {provider !== 'custom' && (
+          {provider !== 'custom' && provider !== 'devin' && (
             <div className="ai-model-search">
               <Search size={13} />
               <input type="text" placeholder="Cari model..." value={modSearch} onChange={e => setModSearch(e.target.value)} />
@@ -633,8 +691,8 @@ function AITab() {
           )}
 
           {/* Model list / custom input */}
-          {provider === 'custom' ? (
-            <input className="form-input" style={{ marginTop: '8px' }} type="text" value={modelName} onChange={e => setModelName(e.target.value)} placeholder="nama-model" />
+          {provider === 'custom' || provider === 'devin' ? (
+            <input className="form-input" style={{ marginTop: '8px' }} type="text" value={modelName} onChange={e => setModelName(e.target.value)} placeholder={provider === 'devin' ? "devin-session" : "nama-model"} disabled={provider === 'devin'} />
           ) : (
             <div className="ai-model-list">
               {filteredModels.length === 0
@@ -656,7 +714,7 @@ function AITab() {
         </div>
 
         {/* Selected model display */}
-        {modelName && provider !== 'custom' && (
+        {modelName && provider !== 'custom' && provider !== 'devin' && (
           <div className="ai-selected-model" style={{ '--prov-color': activeProvider.color }}>
             <BrainCircuit size={13} />
             <span>Aktif: <strong>{modelName}</strong></span>
