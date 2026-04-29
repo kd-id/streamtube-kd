@@ -59,9 +59,9 @@ const CASCADE_ORDER = ['gemini', 'groq', 'openrouter', 'grok', 'openai', 'anthro
 
 // ── Max tokens per request type ──────────────────────────────
 const MAX_TOKENS = {
-  generate: 512,
-  generateAll: 800,
-  test: 20,
+  generate: 2048,      // single field (description can be 300+ words)
+  generateAll: 3000,   // combined title + description + tags
+  test: 20,            // connection test
 };
 
 // ── State ────────────────────────────────────────────────────
@@ -410,26 +410,54 @@ export function useAIStore() {
     if (cached) { console.log('[AI] ✓ Meta cache hit for:', context); return cached; }
 
     const keywordLine = keywords ? `\nFocus keywords: ${keywords}` : '';
-    const prompt = `You are a YouTube SEO expert. Generate metadata for a YouTube video/live stream titled: "${context}"${keywordLine}
+    const prompt = `You are a top-tier YouTube content strategist who writes like a real creator, not a robot. Generate complete metadata for a video/live stream about: "${context}"${keywordLine}
 
-Respond ONLY in this exact format with no extra text, no markdown, no numbering:
+Write in American English. Respond in EXACTLY this format (no markdown, no extra commentary):
 
-TITLE: <one engaging, slightly clickbait title, max 60 chars>
+TITLE: <Write ONE viral-worthy title. Use power words, curiosity gaps, or emotional triggers. Must feel human, slightly clickbait but honest. Max 70 characters. Examples of good patterns: "I Tried X for 30 Days — Here's What Happened", "The SECRET Nobody Tells You About X", "Why X Will Change Everything in 2025">
 ---
-DESCRIPTION: <SEO-optimized, natural, slightly clickbait description in American English. 150-250 words. Casual tone, hook opening, 3-4 bullet points using •, call-to-action, 5-6 relevant hashtags at the end>
+DESCRIPTION: <Write a FULL YouTube description (250-400 words). Follow these rules STRICTLY:
+
+PARAGRAPH 1 (Hook - 2-3 sentences): Start with a bold statement, personal story, or question that makes viewers NEED to keep reading. Use emotion. Don't start with "Welcome to" or "In this video". Instead try: "Okay real talk...", "I wasn't going to share this, but...", "You've been doing X wrong your entire life."
+
+PARAGRAPH 2 (Value - 3-4 sentences): Explain what the viewer will learn or experience. Be specific about benefits. Use "you" and "your" to speak directly to them.
+
+BULLET POINTS (use •): List 4-5 key highlights or topics covered. Make each one specific and intriguing, not generic.
+
+PARAGRAPH 3 (Social proof / urgency - 1-2 sentences): Add credibility or urgency. "Join 50K+ viewers who..." or "This info won't be free forever..."
+
+CALL TO ACTION (1-2 sentences): Natural, not desperate. Example: "If this helped you even 1%, smash that subscribe button — I drop content like this every week 🔥"
+
+HASHTAGS (last line): Add 6-8 relevant hashtags starting with #. Mix popular and niche.
+
+Use 4-6 emojis naturally throughout (🔥 💡 🎯 ⚡ 🚀 etc). Do NOT sound like ChatGPT. Sound like a real YouTuber who's excited about their content.>
 ---
-TAGS: <15 relevant comma-separated YouTube search tags, no generic tags like "video" or "youtube">`;
+TAGS: <Generate exactly 20 YouTube search tags, comma-separated. Rules:
+- First 5 tags: exact match / high-volume search terms related to the title
+- Next 5 tags: long-tail variations (3-5 word phrases people actually search)
+- Next 5 tags: related topics / trending terms in the same niche  
+- Last 5 tags: competitor/alternative keywords viewers might search
+- NO generic tags like "video", "youtube", "content", "2024"
+- Each tag should be something a real person would type into YouTube search>`;
 
     const result = await generateText(prompt, MAX_TOKENS.generateAll);
 
     const titleMatch = result.match(/TITLE:\s*(.+?)(?:\n|$)/i);
-    const descMatch = result.match(/DESCRIPTION:\s*([\.\s\S]+?)(?:---|$)/i);
-    const tagsMatch = result.match(/TAGS:\s*(.+?)(?:\n|$)/is);
+    const descMatch = result.match(/DESCRIPTION:\s*([\s\S]+?)(?:\n---\s*\n|\n---$|---\s*\nTAGS:)/i);
+    const tagsMatch = result.match(/TAGS:\s*([\s\S]+?)$/i);
 
     const title = titleMatch?.[1]?.replace(/^["'`]|["'`]$/g, '').trim() || '';
     const description = descMatch?.[1]?.trim() || '';
     const tagsRaw = tagsMatch?.[1]?.trim() || '';
-    const tags = tagsRaw.split(',').map(t => t.trim()).filter(t => t.length > 0).slice(0, 15);
+    // Clean tags: remove bullet markers, numbering, newlines → split by comma
+    const tags = tagsRaw
+      .replace(/[\n\r]+/g, ', ')
+      .replace(/^\s*[-•*]\s*/gm, '')
+      .replace(/^\s*\d+[\.\)]\s*/gm, '')
+      .split(',')
+      .map(t => t.trim().replace(/^["']|["']$/g, ''))
+      .filter(t => t.length > 0 && t.length < 60)
+      .slice(0, 20);
 
     if (!title && !description && !tags.length) {
       throw new Error('AI returned an unexpected format. Please try again.');

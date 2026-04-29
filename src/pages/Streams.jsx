@@ -781,37 +781,60 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       const descContext = description ? ` Current description: "${description.substring(0, 200)}".` : '';
       let prompt = '';
       if (field === 'title') {
-        prompt = `Generate 5 highly engaging, clickbait but relevant YouTube live stream titles in English about "${context}".${keywordCtx} STRICTLY use this pattern for the titles: [Main Keyword] + [Benefit] + [Hook/Emotion]. Max 60 characters each. Separate each option ONLY with "|||" without numbering or extra text.`;
+        prompt = `You are a viral YouTube title expert. Generate 5 DIFFERENT title options for a video/live stream about "${context}".${keywordCtx}
+
+Rules:
+- Each title must be max 70 characters
+- Use power words, curiosity gaps, or emotional triggers
+- Mix these styles: "How To" / "Why X" / "I Tried X" / "The Truth About X" / "X That Will Change Y"  
+- Must feel written by a real person, NOT a generic AI
+- Slightly clickbait but still honest and relevant
+- Include numbers or specific details when possible
+
+Separate each title ONLY with "|||". No numbering, no quotes, no extra text.`;
       } else if (field === 'description') {
-        prompt = `Write 3 YouTube descriptions for a video/live stream titled "${context}" that are SEO-optimized, natural-sounding, and slightly clickbait — written like a real person, not a generic AI.${keywordCtx}
+        prompt = `You are a successful YouTuber writing a description for your video/live stream titled "${context}".${keywordCtx}
 
-Key guidelines:
-- Tone: casual yet professional, like a knowledgeable friend talking to the viewer
-- Opening sentence MUST hook the reader — make them curious or emotionally engaged
-- Naturally include the main keyword in the first paragraph
-- Use emojis sparingly (3–5 emojis per description, not excessive)
-- Include bullet points (use •) highlighting 3–4 key benefits or features
-- End with a natural call-to-action (e.g., "Subscribe so you never miss a stream!")
-- Add 5–7 relevant hashtags at the end
-- Ideal length: 150–300 words per description
-- Do NOT sound generic or templated — make it feel human and authentic
+Write 3 DIFFERENT full-length YouTube descriptions (each 250-400 words). Each must follow this structure:
+
+HOOK (2-3 sentences): Start with something bold, personal, or controversial. Never start with "Welcome" or "In this video". Try: "Okay so I need to talk about this...", "Most people get this completely wrong...", "I almost didn't upload this, but..."
+
+VALUE (3-4 sentences): What will the viewer learn? Be specific. Use "you" and "your".
+
+BULLET POINTS (use •): 4-5 specific highlights. Not generic — make each one intriguing.
+
+CREDIBILITY (1-2 sentences): Social proof or urgency. "Thousands of viewers already..." or "I've spent 100+ hours researching this..."
+
+CTA (1-2 sentences): Casual, not desperate. "Smash subscribe if this was helpful 🔥" or "Drop a comment telling me your experience!"
+
+HASHTAGS (last line): 6-8 relevant hashtags with #
+
+Additional rules:
+- Use 4-6 emojis naturally (🔥 💡 🎯 ⚡ 🚀 👀 etc)
+- Sound like a REAL person, not ChatGPT
+- Each description should have a different angle/hook
 - Write in American English
+- Be specific to the topic, not generic
 
-IMPORTANT: Separate each description option with "|||" (three vertical bars). Do NOT use numbering. Example format:
-[description 1]|||[description 2]|||[description 3]`;
+IMPORTANT: Separate each description with "|||". No numbering.`;
       } else if (field === 'tags') {
-        prompt = `Generate 5 sets of 15 YouTube tags that are highly relevant for this video/live stream:
+        prompt = `Generate 5 DIFFERENT sets of YouTube tags for this video/live stream:
 Title: "${context}"${descContext}${keywordCtx}
 
-Guidelines:
-- Tags MUST be directly related to the title and content
-- Mix: broad/high-volume tags + specific long-tail tags + trending tags
-- Avoid overly generic tags like "video" or "youtube"
-- Use English (American) tags that people actually search for on YouTube
-- Prioritize tags with real search intent
+Each set must have exactly 15-20 tags. Follow this breakdown per set:
+- 5 high-volume exact-match tags (what people actually type in YouTube search)
+- 5 long-tail tags (3-5 word specific phrases)  
+- 5 related/trending niche tags
+- 3-5 competitor/alternative keywords
 
-IMPORTANT: Separate each set with "|||" (three vertical bars). Within each set, separate tags with commas. Do NOT use numbering. Example format:
-tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
+Rules:
+- Every tag must be directly relevant to the title
+- NO generic tags like "video", "youtube", "content", "2024", "live"
+- Tags should be things REAL people search for on YouTube
+- Mix English tags that match actual search queries
+- Include both broad and hyper-specific tags
+
+IMPORTANT: Separate each set with "|||". Within each set, separate tags with commas. No numbering.`;
       }
 
       const result = await generateText(prompt);
