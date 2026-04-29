@@ -495,11 +495,19 @@ export default function Streams() {
                 </span>
               </div>
               <div className="hpm-adaptive-speed">
-                <span>Speed:</span>
-                <span className={`hpm-speed-value ${realStreamStatus.adaptive.speed >= 1 ? 'good' : realStreamStatus.adaptive.speed >= 0.85 ? 'warn' : 'bad'}`}>
-                  {realStreamStatus.adaptive.speed ? realStreamStatus.adaptive.speed.toFixed(2) + 'x' : '--'}
-                  {realStreamStatus.adaptive.speed >= 1 ? ' ✅' : realStreamStatus.adaptive.speed >= 0.85 ? ' ⚠️' : realStreamStatus.adaptive.speed > 0 ? ' 🔴' : ''}
+                <span>Bitrate:</span>
+                <span className={`hpm-speed-value ${realStreamStatus.adaptive.bitrateHealth === 'good' ? 'good' : realStreamStatus.adaptive.bitrateHealth === 'fair' ? 'warn' : 'bad'}`}>
+                  {realStreamStatus.adaptive.actualBitrate ? `${Math.round(realStreamStatus.adaptive.actualBitrate)} kbps` : '--'}
+                  {realStreamStatus.adaptive.bitrateHealth === 'good' ? ' ✅' : realStreamStatus.adaptive.bitrateHealth === 'fair' ? ' ⚠️' : realStreamStatus.adaptive.bitrateHealth === 'poor' ? ' 🔴' : ''}
                 </span>
+                <span style={{fontSize:'11px',color:'var(--text-muted)',marginLeft:'6px'}}>
+                  / {realStreamStatus.adaptive.tierBitrate || '?'}kbps target
+                </span>
+                {realStreamStatus.adaptive.speed > 0 && (
+                  <span style={{fontSize:'11px',color:'var(--text-muted)',marginLeft:'8px'}}>
+                    Speed: {realStreamStatus.adaptive.speed.toFixed(2)}x
+                  </span>
+                )}
                 <span style={{fontSize:'11px',color:'var(--text-muted)',marginLeft:'8px'}}>Max: Tier {realStreamStatus.adaptive.maxTier}</span>
                 {realStreamStatus.adaptive.changing && <span className="hpm-tier-changing">⏳ Changing...</span>}
               </div>

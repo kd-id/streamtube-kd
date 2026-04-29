@@ -88,9 +88,15 @@ function attachFFmpegHandlers(proc, streamInfo, streamId) {
       if (line.includes('frame=') || line.includes('speed=') || line.startsWith('progress=')) {
         streamInfo.status = 'live';
       }
+      // Parse speed for adaptive monitor
       const speedMatch = line.match(/speed=\s*([0-9.]+)x/);
       if (speedMatch && streamInfo.adaptive) {
         streamInfo.adaptive.lastSpeed = parseFloat(speedMatch[1]);
+      }
+      // Parse actual output bitrate for adaptive monitor (works in both copy and encode mode)
+      const bitrateMatch = line.match(/bitrate=\s*([0-9.]+)kbits\/s/);
+      if (bitrateMatch && streamInfo.adaptive) {
+        streamInfo.adaptive.lastBitrate = parseFloat(bitrateMatch[1]);
       }
       if ((line.toLowerCase().includes('connection refused') || line.toLowerCase().includes('error'))
         && !line.includes('frame=') && !line.includes('bitrate=')) {
@@ -136,6 +142,7 @@ async function restartStreamWithTier(streamId, newTierNum, reason) {
   stream.adaptive.lastTierChange = Date.now();
   stream.adaptive.changing = false;
   stream.adaptive.speedSamples = [];
+  stream.adaptive.bitrateSamples = [];
   stream.adaptive.stableSince = 0;
   stream.adaptive.tierHistory.push({ time: new Date().toISOString(), from: oldTier, to: newTierNum, reason: reason || '' });
 
@@ -155,11 +162,11 @@ async function restartStreamWithTier(streamId, newTierNum, reason) {
 
 function startAdaptiveMonitor(streamId) {
   const POLL_INTERVAL = 5000;
-  const DOWNGRADE_THRESHOLD = 0.85;
-  const UPGRADE_THRESHOLD = 1.05;
-  const DOWNGRADE_SAMPLES = 3;   // 15 seconds of poor
-  const UPGRADE_STABLE_MS = 60000; // 60 seconds of good
-  const COOLDOWN_MS = 30000;
+  const DOWNGRADE_SAMPLES = 3;        // 15 seconds of poor performance
+  const UPGRADE_STABLE_MS = 60000;    // 60 seconds of good performance before upgrading
+  const COOLDOWN_MS = 30000;          // 30 seconds between tier changes
+  const BITRATE_LOW_RATIO = 0.60;     // Downgrade if actual < 60% of target
+  const BITRATE_OK_RATIO = 0.85;      // Consider healthy if actual > 85% of target
 
   const iv = setInterval(() => {
     const stream = activeStreams.get(streamId);
@@ -167,35 +174,60 @@ function startAdaptiveMonitor(streamId) {
       clearInterval(iv); return;
     }
     if (!stream.adaptive?.enabled || stream.adaptive.changing) return;
-    const speed = stream.adaptive.lastSpeed;
-    if (!speed || speed === 0) return;
 
     const now = Date.now();
     if (now - (stream.adaptive.lastTierChange || 0) < COOLDOWN_MS) return;
 
-    stream.adaptive.speedSamples.push(speed);
-    if (stream.adaptive.speedSamples.length > 12) stream.adaptive.speedSamples.shift();
+    const speed = stream.adaptive.lastSpeed || 0;
+    const actualBitrate = stream.adaptive.lastBitrate || 0;
+    const currentTier = QUALITY_TIERS.find(t => t.tier === stream.adaptive.currentTier);
+    const targetBitrate = currentTier ? parseInt(currentTier.bitrate) : 2500;
 
-    const recent = stream.adaptive.speedSamples.slice(-DOWNGRADE_SAMPLES);
-    const avgRecent = recent.reduce((a, b) => a + b, 0) / recent.length;
+    // Calculate bitrate ratio (how much of the target we're actually delivering)
+    const bitrateRatio = targetBitrate > 0 && actualBitrate > 0 ? actualBitrate / targetBitrate : 1;
 
-    // Downgrade: recent average below threshold
-    if (avgRecent < DOWNGRADE_THRESHOLD && recent.length >= DOWNGRADE_SAMPLES) {
+    // Store samples
+    if (!stream.adaptive.bitrateSamples) stream.adaptive.bitrateSamples = [];
+    if (actualBitrate > 0) stream.adaptive.bitrateSamples.push(bitrateRatio);
+    if (stream.adaptive.bitrateSamples.length > 12) stream.adaptive.bitrateSamples.shift();
+    if (speed > 0) {
+      stream.adaptive.speedSamples.push(speed);
+      if (stream.adaptive.speedSamples.length > 12) stream.adaptive.speedSamples.shift();
+    }
+
+    const recentBitrate = stream.adaptive.bitrateSamples.slice(-DOWNGRADE_SAMPLES);
+    const avgBitrateRatio = recentBitrate.length > 0 ? recentBitrate.reduce((a, b) => a + b, 0) / recentBitrate.length : 1;
+    
+    const recentSpeed = stream.adaptive.speedSamples.slice(-DOWNGRADE_SAMPLES);
+    const avgSpeed = recentSpeed.length > 0 ? recentSpeed.reduce((a, b) => a + b, 0) / recentSpeed.length : 1;
+
+    // DOWNGRADE: either bitrate too low OR speed too slow
+    const bitratePoor = recentBitrate.length >= DOWNGRADE_SAMPLES && avgBitrateRatio < BITRATE_LOW_RATIO;
+    const speedPoor = recentSpeed.length >= DOWNGRADE_SAMPLES && avgSpeed < 0.85;
+    
+    if (bitratePoor || speedPoor) {
       const cur = stream.adaptive.currentTier;
       if (cur > 1) {
-        restartStreamWithTier(streamId, cur - 1, `speed avg ${avgRecent.toFixed(2)}x < ${DOWNGRADE_THRESHOLD}`);
+        const reason = bitratePoor
+          ? `bitrate ${Math.round(actualBitrate)}kbps = ${Math.round(avgBitrateRatio*100)}% of ${targetBitrate}kbps target`
+          : `speed avg ${avgSpeed.toFixed(2)}x too slow`;
+        console.log(`[Adaptive ${streamId}] DOWNGRADE: ${reason}`);
+        restartStreamWithTier(streamId, cur - 1, reason);
       }
       return;
     }
 
-    // Upgrade: speed consistently good
-    if (avgRecent > UPGRADE_THRESHOLD) {
+    // UPGRADE: bitrate healthy AND speed OK for sustained period
+    const bitrateHealthy = avgBitrateRatio >= BITRATE_OK_RATIO;
+    const speedHealthy = avgSpeed >= 1.0 || recentSpeed.length === 0; // no speed data = copy mode, assume OK
+    
+    if (bitrateHealthy && speedHealthy) {
       if (!stream.adaptive.stableSince) stream.adaptive.stableSince = now;
       if (now - stream.adaptive.stableSince >= UPGRADE_STABLE_MS) {
         const cur = stream.adaptive.currentTier;
         const maxTier = stream.adaptive.maxTier || getMaxTier();
         if (cur < maxTier) {
-          restartStreamWithTier(streamId, cur + 1, `speed avg ${avgRecent.toFixed(2)}x stable for 60s`);
+          restartStreamWithTier(streamId, cur + 1, `bitrate healthy ${Math.round(avgBitrateRatio*100)}% for 60s`);
           stream.adaptive.stableSince = 0;
         }
       }
@@ -1494,6 +1526,14 @@ export const apiMiddleware = async (req, res, next) => {
               tierBitrate: tierInfo?.bitrate || '',
               maxTier: stream.adaptive.maxTier,
               speed: stream.adaptive.lastSpeed || 0,
+              actualBitrate: stream.adaptive.lastBitrate || 0,
+              bitrateHealth: (() => {
+                const target = tierInfo ? parseInt(tierInfo.bitrate) : 0;
+                const actual = stream.adaptive.lastBitrate || 0;
+                if (!target || !actual) return 'unknown';
+                const ratio = actual / target;
+                return ratio >= 0.85 ? 'good' : ratio >= 0.60 ? 'fair' : 'poor';
+              })(),
               changing: stream.adaptive.changing,
               tierHistory: stream.adaptive.tierHistory.slice(-10),
             } : null,
