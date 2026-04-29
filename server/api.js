@@ -92,7 +92,7 @@ async function getVideoInfo(filePath) {
         const audio = info.streams?.find(s => s.codec_type === 'audio');
         const formatTags = info.format?.tags || {};
         const videoTags = video?.tags || {};
-        const isYTReady = formatTags.comment === 'yt_ready' || videoTags.comment === 'yt_ready';
+        const isYTReady = formatTags.comment === 'yt_ready_v2' || videoTags.comment === 'yt_ready_v2';
         resolve({
           codec: video?.codec_name || 'unknown',
           width: video?.width || 0,
@@ -113,7 +113,13 @@ async function getVideoInfo(filePath) {
 async function preprocessVideo(inputPath, config, onLog) {
   const { codec, width, height, timescale, audioCodec, audioSampleRate, isYTReady } = await getVideoInfo(inputPath);
   const needsVideoTranscode = !isYTReady || codec !== 'h264';
-  let [cw, ch] = (config.resolution || '1280x720').split('x').map(Number);
+  let resStr = config.resolution || '1280x720';
+  if (resStr === '1080p') resStr = '1920x1080';
+  else if (resStr === '720p') resStr = '1280x720';
+  else if (resStr === '480p') resStr = '854x480';
+  let [cw, ch] = resStr.split('x').map(Number);
+  if (!cw || !ch) { cw = 1280; ch = 720; }
+  
   const needsScale = width !== cw || height !== ch;
   const needsTimestampFix = timescale !== 90000;
   const hasAudio = audioCodec !== 'unknown' && audioCodec !== '';
@@ -128,14 +134,19 @@ async function preprocessVideo(inputPath, config, onLog) {
     ? ['-vf', `scale=${cw}:${ch}:force_original_aspect_ratio=decrease,pad=${cw}:${ch}:(ow-iw)/2:(oh-ih)/2`]
     : [];
 
+  const fpsNum = parseInt(config.fps) || 30;
   const videoBitrateArgs = needsVideoTranscode || needsScale
     ? [
+        '-r', `${fpsNum}`,
         '-b:v', `${config.bitrate}k`,
+        '-minrate', `${config.bitrate}k`,
         '-maxrate', `${config.bitrate}k`,
         '-bufsize', `${parseInt(config.bitrate) * 2}k`,
+        '-nal-hrd', 'cbr',
         '-pix_fmt', 'yuv420p',
-        '-g', `${config.fps * 2}`,
-        '-keyint_min', `${config.fps * 2}`,
+        '-g', `${fpsNum * 2}`,
+        '-keyint_min', `${fpsNum * 2}`,
+        '-sc_threshold', '0',
         '-force_key_frames', `expr:gte(t,n_forced*2)`
       ]
     : [];
@@ -155,7 +166,7 @@ async function preprocessVideo(inputPath, config, onLog) {
       ...(needsAudioTranscode ? ['-b:a', '128k', '-ar', '44100'] : []),
       '-movflags', '+faststart',
       '-video_track_timescale', '90000',
-      '-metadata', 'comment=yt_ready',
+      '-metadata', 'comment=yt_ready_v2',
       '-y', tmpPath
     ];
     const proc = spawn('ffmpeg', args, { shell: true, windowsHide: true });
@@ -969,7 +980,11 @@ export const apiMiddleware = async (req, res, next) => {
 
           const baseUrl = rtmpUrl.replace(/\/$/, '');
           const fullRtmpUrl = `${baseUrl}/${streamKey}`;
-          const [width, height] = resolution.split('x');
+          let streamResStr = resolution || '1280x720';
+          if (streamResStr === '1080p') streamResStr = '1920x1080';
+          else if (streamResStr === '720p') streamResStr = '1280x720';
+          else if (streamResStr === '480p') streamResStr = '854x480';
+          const [width, height] = streamResStr.split('x');
           const isRtmps = fullRtmpUrl.startsWith('rtmps://');
 
           let args = [];
@@ -1003,7 +1018,8 @@ export const apiMiddleware = async (req, res, next) => {
                       '-map', '0:v:0', '-map', '1:a:0',
                       '-vf', vfFilter,
                       '-c:v', 'libx264', '-preset', 'veryfast',
-                      '-b:v', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                      '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                      '-nal-hrd', 'cbr',
                       '-pix_fmt', 'yuv420p',
                       '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
                       '-c:a', 'copy',
@@ -1030,7 +1046,8 @@ export const apiMiddleware = async (req, res, next) => {
                       '-map', '0:v:0', '-map', '1:a:0',
                       '-vf', vfFilter,
                       '-c:v', 'libx264', '-preset', 'veryfast',
-                      '-b:v', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                      '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                      '-nal-hrd', 'cbr',
                       '-pix_fmt', 'yuv420p',
                       '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
                       '-c:a', 'aac', '-b:a', '128k',
@@ -1057,7 +1074,8 @@ export const apiMiddleware = async (req, res, next) => {
                   '-map', '1:v:0', '-map', '0:a:0',
                   ...(vfFilter ? ['-vf', vfFilter] : []),
                   '-c:v', 'libx264', '-preset', 'ultrafast',
-                  '-b:v', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                  '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                  '-nal-hrd', 'cbr',
                   '-pix_fmt', 'yuv420p',
                   '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
                   '-c:a', 'copy',
