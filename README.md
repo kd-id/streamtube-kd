@@ -86,6 +86,9 @@ Paste konfigurasi ini:
 server {
     listen 80;
     server_name domain-kamu.com;
+    
+    # Izinkan upload file besar (contoh: maksimal 5GB)
+    client_max_body_size 5000M;
 
     location / {
         proxy_pass http://localhost:3000;
