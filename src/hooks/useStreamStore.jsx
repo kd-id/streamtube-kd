@@ -160,7 +160,7 @@ export function StreamProvider({ children }) {
     })),
   });
 
-  // On mount: check backend for actually running streams and restore their live status
+  // On mount: check backend for actually running streams and restore their live status + elapsed time
   useEffect(() => {
     const syncActive = async () => {
       try {
@@ -169,7 +169,13 @@ export function StreamProvider({ children }) {
         if (data.streams && data.streams.length > 0) {
           data.streams.forEach(active => {
             if (active.status === 'live' || active.status === 'starting') {
-              dispatch({ type: 'UPDATE_STREAM', payload: { id: active.streamId, updates: { status: active.status } } });
+              // Calculate elapsed seconds from startedAt so timer doesn't reset on refresh
+              let elapsed = 0;
+              if (active.startedAt) {
+                elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
+                if (elapsed < 0) elapsed = 0;
+              }
+              dispatch({ type: 'UPDATE_STREAM', payload: { id: active.streamId, updates: { status: active.status, elapsedSeconds: elapsed } } });
             }
           });
         }
