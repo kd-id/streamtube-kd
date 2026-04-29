@@ -853,13 +853,23 @@ export const apiMiddleware = async (req, res, next) => {
           const freeMem = os.freemem();
           const usedMem = totalMem - freeMem;
           const ramUsagePercent = ((usedMem / totalMem) * 100).toFixed(1);
-          const cpus = os.cpus();
-          let idle = 0; let total = 0;
-          cpus.forEach(cpu => {
-            for (let type in cpu.times) total += cpu.times[type];
-            idle += cpu.times.idle;
-          });
-          const cpuUsagePercent = (100 - ~~(100 * idle / total)).toFixed(1); // Simple boot average, sufficient for UI
+
+          // Real-time CPU measurement: compare two snapshots 200ms apart
+          const getCpuSnapshot = () => {
+            const cpus = os.cpus();
+            let idle = 0, total = 0;
+            cpus.forEach(cpu => {
+              for (let type in cpu.times) total += cpu.times[type];
+              idle += cpu.times.idle;
+            });
+            return { idle, total };
+          };
+          const snap1 = getCpuSnapshot();
+          await new Promise(r => setTimeout(r, 200));
+          const snap2 = getCpuSnapshot();
+          const idleDelta = snap2.idle - snap1.idle;
+          const totalDelta = snap2.total - snap1.total;
+          const cpuUsagePercent = totalDelta > 0 ? (100 - (100 * idleDelta / totalDelta)).toFixed(1) : '0.0';
 
           let networkDownStr = '0.00', networkUpStr = '0.00';
           try {
@@ -1742,13 +1752,16 @@ export const apiMiddleware = async (req, res, next) => {
               try {
                 const base64Data = thumbnailBase64.replace(/^data:image\/\w+;base64,/, '');
                 const imageBuffer = Buffer.from(base64Data, 'base64');
+                // Auto-detect content type from data URI
+                const contentType = thumbnailBase64.startsWith('data:image/png') ? 'image/png'
+                  : thumbnailBase64.startsWith('data:image/webp') ? 'image/webp' : 'image/jpeg';
                 await fetch(
                   `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${broadcast.id}`,
                   {
                     method: 'POST',
                     headers: {
                       Authorization: `Bearer ${accessToken}`,
-                      'Content-Type': 'image/jpeg',
+                      'Content-Type': contentType,
                     },
                     body: imageBuffer,
                   }

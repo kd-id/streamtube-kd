@@ -782,6 +782,18 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setChannelId(existing.channelId || '');
       setThumbnailUrl(existing.thumbnailUrl || null);
       setThumbnailServerUrl(existing.thumbnailUrl && existing.thumbnailUrl.startsWith('/uploads') ? existing.thumbnailUrl : null);
+      // Restore thumbnailBase64 — if missing, fetch from thumbnailUrl
+      if (existing.thumbnailBase64) {
+        setThumbnailBase64(existing.thumbnailBase64);
+      } else if (existing.thumbnailUrl && !existing.thumbnailUrl.startsWith('blob:')) {
+        fetch(existing.thumbnailUrl).then(r => r.blob()).then(blob => {
+          const reader = new FileReader();
+          reader.onload = (ev) => setThumbnailBase64(ev.target.result);
+          reader.readAsDataURL(blob);
+        }).catch(() => setThumbnailBase64(null));
+      } else {
+        setThumbnailBase64(null);
+      }
       setEnableSchedule(!!existing.scheduledAt);
       setScheduledAt(existing.scheduledAt || '');
       setEndAt(existing.endAt || '');
