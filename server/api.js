@@ -107,6 +107,19 @@ async function reencodeForTier(inputPath, tier, ffmpegBin) {
   const [w, h] = tier.resolution.split('x');
   const outputPath = inputPath.replace(/(\.\w+)$/, `.tier${tier.tier}$1`);
 
+  // Optimization: Reuse existing tier file if the merged video hasn't changed
+  if (fs.existsSync(outputPath) && fs.existsSync(inputPath)) {
+    const inputStat = fs.statSync(inputPath);
+    const outputStat = fs.statSync(outputPath);
+    if (outputStat.mtime > inputStat.mtime) {
+      console.log(`[Adaptive] Reusing existing tier file: ${path.basename(outputPath)} (${tier.name})`);
+      return outputPath;
+    } else {
+      console.log(`[Adaptive] Original video changed, deleting old tier file: ${path.basename(outputPath)}`);
+      fs.unlinkSync(outputPath);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const args = [
       '-i', inputPath,
