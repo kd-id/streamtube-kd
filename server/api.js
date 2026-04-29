@@ -1209,8 +1209,12 @@ export const apiMiddleware = async (req, res, next) => {
              }
           }
 
-          // ── Shared YouTube-compliant video encoding args (optimized for 1-core VPS) ──
-          const ytVideoArgs = [
+          // ── Video args: use COPY mode if preprocessed (no re-encoding = ~5% CPU) ──
+          // Only re-encode if overlay filters are active or source needs transcoding
+          const needsEncode = !!vfFilter; // Overlays require re-encoding
+          
+          const ytVideoArgs = needsEncode ? [
+              // Full encoding (only when overlays/filters active)
               '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
               '-profile:v', 'baseline', '-level', '3.1',
               '-r', `${parseInt(fps)}`,
@@ -1219,7 +1223,12 @@ export const apiMiddleware = async (req, res, next) => {
               '-pix_fmt', 'yuv420p',
               '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
               '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
+          ] : [
+              // Copy mode — preprocessed file is already YouTube-ready (~5% CPU)
+              '-c:v', 'copy',
           ];
+
+          console.log(`[Stream ${streamId}] Video mode: ${needsEncode ? 'ENCODE (overlays active)' : 'COPY (no re-encode, minimal CPU)'}`);
 
           if (mergedVideo && mergedAudio) {
               args = [
@@ -1251,8 +1260,13 @@ export const apiMiddleware = async (req, res, next) => {
                   '-stream_loop', '-1', '-i', mergedAudio,
                   '-f', 'lavfi', '-i', `color=c=black:s=${width}x${height}:r=${fps}`,
                   '-map', '1:v:0', '-map', '0:a:0',
-                  ...(vfFilter ? ['-vf', vfFilter] : []),
-                  ...ytVideoArgs,
+                  // Audio-only with generated video always needs encoding
+                  '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+                  '-profile:v', 'baseline', '-level', '3.1',
+                  '-pix_fmt', 'yuv420p',
+                  '-b:v', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+                  '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
+                  '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
                   '-c:a', 'copy',
                   '-flvflags', 'no_duration_filesize',
                   '-avoid_negative_ts', 'make_zero'
