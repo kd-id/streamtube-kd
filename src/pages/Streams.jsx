@@ -1489,11 +1489,37 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                   )}
                 </div>
 
-                {/* Thumbnail */}
-                <div className="form-group">
-                  <label className="form-label">Thumbnail</label>
+                <div className="csm-preview-media-group">
+                  {/* Video Player Preview — same as Manual */}
+                  <div className="form-group">
+                    <label className="form-label">Video Preview</label>
+                    <div className="csm-video-player-wrap">
+                      {selectedMedia && selectedMedia.serverFilename ? (
+                        <video
+                          className="csm-video-player"
+                          controls
+                          src={`/api/video/play/${encodeURIComponent(selectedMedia.serverFilename)}`}
+                        />
+                      ) : selectedMedia && selectedMedia.objectUrl ? (
+                        <video
+                          className="csm-video-player"
+                          controls
+                          src={selectedMedia.objectUrl}
+                        />
+                      ) : (
+                        <div className="csm-preview-empty">
+                          <MonitorPlay size={36} strokeWidth={1} />
+                          <span>Select a video to preview</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Thumbnail — same as Manual */}
+                  <div className="form-group csm-thumb-group">
+                    <label className="form-label">Thumbnail</label>
                   <div className="csm-thumb-container">
-                    <div className="csm-thumb" onClick={() => { if (!thumbnailUrl) document.getElementById('csm-thumb-input-api')?.click(); }}>
+                    <div className="csm-thumb" onClick={() => { if (!thumbnailUrl && !selectedMedia?.serverFilename) document.getElementById('csm-thumb-input-api')?.click(); }}>
                       {thumbnailUrl ? (
                         <>
                           <img src={thumbnailUrl} alt="" className="csm-thumb-img" />
@@ -1503,17 +1529,27 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                           </div>
                         </>
                       ) : (
-                        <div className="csm-thumb-empty">
-                          <ImageIcon size={24} strokeWidth={1} />
-                          <span>Select Thumbnail</span>
-                          <small>Recommended: 1280×720</small>
-                          <div className="csm-thumb-actions">
-                            <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}>Upload File</button>
-                            <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}>From Gallery</button>
+                        selectedMedia?.serverFilename ? (
+                          <>
+                            <img src={`/api/video/thumbnail/${encodeURIComponent(selectedMedia.serverFilename)}`} alt="" className="csm-thumb-img" onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerHTML='<div class="csm-thumb-empty"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Click to upload</span><small>1280×720</small></div>'; }} />
+                            <div className="csm-thumb-overlay-action">
+                              <button className="btn-action start" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}><ImageIcon size={12} /> Upload Custom</button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="csm-thumb-empty">
+                            <ImageIcon size={20} strokeWidth={1} />
+                            <span>Select Thumbnail</span>
+                            <small>1280×720 (Max 2MB)</small>
+                            <div className="csm-thumb-actions">
+                              <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input-api')?.click(); }}>Upload File</button>
+                              <button className="btn-secondary" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}>From Gallery</button>
+                            </div>
                           </div>
-                        </div>
+                        )
                       )}
-                      <input id="csm-thumb-input-api" type="file" accept="image/*" hidden onChange={handleThumbnail} />
+                      {thumbnailUrl && !selectedMedia?.serverFilename && <input id="csm-thumb-input-api" type="file" accept="image/*" hidden onChange={handleThumbnail} />}
+                      {(!thumbnailUrl || selectedMedia?.serverFilename) && <input id="csm-thumb-input-api" type="file" accept="image/*" hidden onChange={handleThumbnail} />}
                     </div>
                     {showThumbGallery && (
                       <div className="csm-thumb-gallery-dropdown">
@@ -1533,6 +1569,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                       </div>
                     )}
                   </div>
+                </div>
                 </div>
 
                 {/* Enable Schedule */}
