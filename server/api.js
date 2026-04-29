@@ -283,6 +283,7 @@ async function getVideoInfo(filePath) {
           codec: video?.codec_name || 'unknown',
           width: video?.width || 0,
           height: video?.height || 0,
+          bitrate: parseInt(video?.bit_rate || info.format?.bit_rate || '0'),
           timescale: parseInt(video?.time_base?.split('/')[1] || '0'),
           audioCodec: audio?.codec_name || 'unknown',
           audioSampleRate: parseInt(audio?.sample_rate || '0'),
@@ -297,7 +298,7 @@ async function getVideoInfo(filePath) {
 }
 
 async function preprocessVideo(inputPath, config, onLog) {
-  const { codec, width, height, timescale, audioCodec, audioSampleRate, isYTReady } = await getVideoInfo(inputPath);
+  const { codec, width, height, bitrate: fileBitrate, timescale, audioCodec, audioSampleRate, isYTReady } = await getVideoInfo(inputPath);
   const needsVideoTranscode = !isYTReady || codec !== 'h264';
   let resStr = config.resolution || '1280x720';
   if (resStr === '1080p') resStr = '1920x1080';
@@ -311,17 +312,28 @@ async function preprocessVideo(inputPath, config, onLog) {
   const hasAudio = audioCodec !== 'unknown' && audioCodec !== '';
   const needsAudioTranscode = hasAudio && (audioCodec !== 'aac' || audioSampleRate !== 44100);
 
-  if (!needsVideoTranscode && !needsScale && !needsTimestampFix && !needsAudioTranscode) {
+  // Check if bitrate is significantly different from target (>30% off)
+  const targetBitrateKbps = parseInt(config.bitrate) || 2500;
+  const fileBitrateKbps = fileBitrate > 0 ? fileBitrate / 1000 : 0;
+  const needsBitrateAdjust = fileBitrateKbps > 0 && (Math.abs(fileBitrateKbps - targetBitrateKbps) / targetBitrateKbps > 0.3);
+  
+  if (needsBitrateAdjust) {
+    console.log(`[Preprocess] Bitrate mismatch: file=${Math.round(fileBitrateKbps)}kbps vs target=${targetBitrateKbps}kbps — forcing re-encode`);
+  }
+
+  if (!needsVideoTranscode && !needsScale && !needsTimestampFix && !needsAudioTranscode && !needsBitrateAdjust) {
+    console.log(`[Preprocess] File already YouTube-ready at correct bitrate (${Math.round(fileBitrateKbps)}kbps) — skipping`);
     return { path: inputPath, needsFilter: false };
   }
 
   const tmpPath = inputPath + '.tmp.mp4';
-  const vfArgs = needsScale || needsVideoTranscode
+  const needsFullEncode = needsVideoTranscode || needsScale || needsBitrateAdjust;
+  const vfArgs = needsFullEncode
     ? ['-vf', `scale=${cw}:${ch}:force_original_aspect_ratio=decrease,pad=${cw}:${ch}:(ow-iw)/2:(oh-ih)/2`]
     : [];
 
   const fpsNum = parseInt(config.fps) || 30;
-  const videoBitrateArgs = needsVideoTranscode || needsScale
+  const videoBitrateArgs = needsFullEncode
     ? [
         '-r', `${fpsNum}`,
         '-b:v', `${config.bitrate}k`,
@@ -337,15 +349,15 @@ async function preprocessVideo(inputPath, config, onLog) {
       ]
     : [];
 
-  const logMsg = `[Preprocess] Processing video: ${path.basename(inputPath)}`;
+  const logMsg = `[Preprocess] Processing video: ${path.basename(inputPath)} (encode=${needsFullEncode}, bitrateAdjust=${needsBitrateAdjust}, target=${targetBitrateKbps}kbps)`;
   console.log(logMsg);
   if (onLog) onLog(logMsg);
 
   return new Promise((resolve, reject) => {
     const args = [
       '-i', inputPath,
-      '-c:v', (needsVideoTranscode || needsScale) ? 'libx264' : 'copy',
-      ...(needsVideoTranscode || needsScale ? [
+      '-c:v', needsFullEncode ? 'libx264' : 'copy',
+      ...(needsFullEncode ? [
         '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
         '-profile:v', 'baseline', '-level', '3.1',
         '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
