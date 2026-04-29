@@ -238,151 +238,171 @@ export function useAIStore() {
     return data.choices?.[0]?.message?.content?.trim() || 'OK';
   }, [state.customBodyTemplate, state.customResponsePath]);
 
-  // Gemini fallback models ordered by availability (flash models have higher free-tier quotas)
-  const GEMINI_FALLBACK_MODELS = [
-    'gemini-2.0-flash',
-    'gemini-2.5-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-pro',
-  ];
 
-  const callGeminiAPI = async (model, key, promptText) => {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-      {
+  // Generic caller that works for any provider/model
+  const callProviderAPI = async (provider, model, key, base, promptText) => {
+    if (provider === 'gemini') {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: { temperature: 0.7 },
+          }),
+        }
+      );
+      const data = await res.json();
+      return { data, status: res.status, provider: 'gemini' };
+    }
+
+    if (provider === 'anthropic') {
+      const url = `${(base || 'https://api.anthropic.com/v1').replace(/\/$/, '')}/messages`;
+      const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerously-allow-browser': 'true',
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: promptText }] }],
-          generationConfig: { temperature: 0.7 },
+          model: model || 'claude-3-haiku-20240307',
+          max_tokens: 2048,
+          messages: [{ role: 'user', content: promptText }],
+          temperature: 0.7,
         }),
-      }
-    );
+      });
+      const data = await res.json();
+      return { data, status: res.status, provider: 'anthropic' };
+    }
+
+    // OpenAI-compatible (openai, groq, grok, openrouter, custom, etc.)
+    const url = `${(base || 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        model: model || 'gpt-4o',
+        messages: [{ role: 'user', content: promptText }],
+        temperature: 0.7,
+      }),
+    });
     const data = await res.json();
-    return { data, status: res.status };
+    return { data, status: res.status, provider: 'openai-compat' };
+  };
+
+  // Extract text from any provider response
+  const extractText = ({ data, provider: prov }) => {
+    if (prov === 'gemini') {
+      if (data.error) return null;
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    }
+    if (prov === 'anthropic') {
+      if (data.error) return null;
+      return data.content?.[0]?.text || null;
+    }
+    // OpenAI-compatible
+    if (data.error) return null;
+    return data.choices?.[0]?.message?.content || null;
+  };
+
+  // Check if response is a rate-limit / server error that warrants a retry
+  const isRetryable = ({ data, status }) => {
+    const code = data?.error?.code || status;
+    return code === 429 || code === 503 || code === 529;
   };
 
   const generateText = async (promptText) => {
     const key = getEffectiveKey(state.provider);
-    if (!key) throw new Error('API Key belum diatur di Settings > AI Assistants.');
+    if (!key) throw new Error('AI API Key is not set. Please configure it in Settings > AI Assistants.');
     const cleanModel = sanitizeModel(state.modelName);
     const base = getEffectiveBase(state.provider);
 
-    try {
-      if (state.provider === 'gemini') {
-        // Try the selected model first
-        const { data, status } = await callGeminiAPI(cleanModel, key, promptText);
-        
-        // If success, return immediately
-        if (!data.error && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          return data.candidates[0].content.parts[0].text;
-        }
-
-        // If 429 or 503, try fallback models
-        if (data.error && (data.error.code === 429 || data.error.code === 503 || status === 429 || status === 503)) {
-          console.warn(`[AI] Model "${cleanModel}" returned ${data.error.code || status}. Trying fallback models...`);
-          
-          const fallbacks = GEMINI_FALLBACK_MODELS.filter(m => m !== cleanModel);
-          for (const fallbackModel of fallbacks) {
-            try {
-              // Small delay to avoid hitting rate limits immediately
-              await new Promise(r => setTimeout(r, 1000));
-              console.log(`[AI] Trying fallback model: ${fallbackModel}`);
-              const fb = await callGeminiAPI(fallbackModel, key, promptText);
-              if (!fb.data.error && fb.data.candidates?.[0]?.content?.parts?.[0]?.text) {
-                console.log(`[AI] ✓ Fallback model "${fallbackModel}" succeeded!`);
-                return fb.data.candidates[0].content.parts[0].text;
-              }
-              if (fb.data.error && (fb.data.error.code === 429 || fb.data.error.code === 503)) {
-                console.warn(`[AI] Fallback "${fallbackModel}" also rate limited, trying next...`);
-                continue;
-              }
-              if (fb.data.error) {
-                console.warn(`[AI] Fallback "${fallbackModel}" error: ${fb.data.error.message}`);
-                continue;
-              }
-            } catch (fbErr) {
-              console.warn(`[AI] Fallback "${fallbackModel}" failed:`, fbErr.message);
-              continue;
-            }
-          }
-          throw new Error(`Semua model Gemini sedang rate limited (429/503). Coba lagi dalam beberapa menit, atau ganti API key.`);
-        }
-
-        if (data.error) {
-          throw new Error(data.error.message || 'Gemini API Error');
-        }
-        return data.candidates[0].content.parts[0].text;
-
-      } else if (state.provider === 'devin') {
-        const res = await fetch('https://api.devin.ai/v1/sessions', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: JSON.stringify({ prompt: promptText }),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'Devin API Error');
-        const sessionUrl = `https://app.devin.ai/sessions/${data.session_id || data.id}`;
-        return `[Devin Session Created]\nSilakan cek progres di: ${sessionUrl}`;
-
-      } else if (state.provider === 'anthropic') {
-        const url = `${(base || 'https://api.anthropic.com/v1').replace(/\/$/, '')}/messages`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': key,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerously-allow-browser': 'true',
-          },
-          body: JSON.stringify({
-            model: cleanModel || 'claude-3-haiku-20240307',
-            max_tokens: 1024,
-            messages: [{ role: 'user', content: promptText }],
-            temperature: 0.7,
-          }),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'Anthropic API Error');
-        return data.content[0].text;
-
-      } else if (state.provider === 'custom') {
-        if (!base) throw new Error('Base URL wajib diisi untuk Custom Provider.');
-        const parsedBody = state.customBodyTemplate.replace(/\{\{PROMPT\}\}/g, promptText).replace(/\{\{MODEL\}\}/g, cleanModel);
-        const res = await fetch(base, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: parsedBody,
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'Custom API Error');
-        if (state.customResponsePath) {
-          const val = getNestedValue(data, state.customResponsePath);
-          if (val) return String(val).trim();
-        }
-        return JSON.stringify(data);
-
-      } else {
-        const url = `${(base || 'https://api.openai.com/v1').replace(/\/$/, '')}/chat/completions`;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: JSON.stringify({
-            model: cleanModel || 'gpt-4o',
-            messages: [{ role: 'user', content: promptText }],
-            temperature: 0.7,
-          }),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error.message || 'API Error');
-        return data.choices[0].message.content;
-      }
-    } catch (err) {
-      console.error('AI Gen Error:', err);
-      throw err;
+    // Skip fallback for Devin (session-based, no model list)
+    if (state.provider === 'devin') {
+      const res = await fetch('https://api.devin.ai/v1/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify({ prompt: promptText }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || 'Devin API Error');
+      const sessionUrl = `https://app.devin.ai/sessions/${data.session_id || data.id}`;
+      return `[Devin Session Created]\nCheck progress at: ${sessionUrl}`;
     }
+
+    // Skip fallback for custom (single endpoint, no model list)
+    if (state.provider === 'custom') {
+      if (!base) throw new Error('Base URL is required for Custom Provider.');
+      const parsedBody = state.customBodyTemplate
+        .replace(/\{\{PROMPT\}\}/g, promptText)
+        .replace(/\{\{MODEL\}\}/g, cleanModel);
+      const res = await fetch(base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+        body: parsedBody,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error.message || 'Custom API Error');
+      if (state.customResponsePath) {
+        const val = getNestedValue(data, state.customResponsePath);
+        if (val) return String(val).trim();
+      }
+      return JSON.stringify(data);
+    }
+
+    // Build fallback queue: active model first, then rest of user's model list
+    const userModelList = (state.providerModels?.[state.provider] || []).map(sanitizeModel);
+    const fallbackQueue = [
+      cleanModel,
+      // Add models from user's list that aren't the active model
+      ...userModelList.filter(m => m && m !== cleanModel),
+    ].filter(Boolean);
+
+    console.log(`[AI] Provider: ${state.provider} | Active: ${cleanModel} | Fallback queue: ${fallbackQueue.length} models`);
+
+    let lastError = null;
+    for (let i = 0; i < fallbackQueue.length; i++) {
+      const model = fallbackQueue[i];
+      try {
+        if (i > 0) {
+          await new Promise(r => setTimeout(r, 800)); // brief delay between retries
+          console.log(`[AI] Trying fallback model [${i}/${fallbackQueue.length - 1}]: ${model}`);
+        }
+
+        const response = await callProviderAPI(state.provider, model, key, base, promptText);
+        const text = extractText(response);
+
+        if (text) {
+          if (i > 0) console.log(`[AI] ✓ Fallback model "${model}" succeeded`);
+          return text;
+        }
+
+        if (isRetryable(response)) {
+          console.warn(`[AI] Model "${model}" rate limited (${response.data?.error?.code || response.status}), trying next...`);
+          lastError = new Error(`Model "${model}" is rate limited. Trying next model...`);
+          continue;
+        }
+
+        // Non-retryable error
+        const errMsg = response.data?.error?.message || `Unknown error from ${model}`;
+        console.warn(`[AI] Model "${model}" error: ${errMsg}`);
+        lastError = new Error(errMsg);
+        // For non-retryable errors on the first model, stop immediately
+        if (i === 0) throw lastError;
+        continue;
+
+      } catch (err) {
+        if (err === lastError) throw err; // re-throw non-retryable
+        lastError = err;
+        console.warn(`[AI] Model "${model}" threw:`, err.message);
+        continue;
+      }
+    }
+
+    throw lastError || new Error(`All ${state.provider} models are unavailable or rate limited. Please try again later or switch API key.`);
   };
 
   return { config: state, updateConfig, generateText, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels };
