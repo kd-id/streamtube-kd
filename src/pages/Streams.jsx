@@ -762,14 +762,15 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [rtmpUrl, setRtmpUrl] = useState('rtmp://a.rtmp.youtube.com/live2');
   const [streamKey, setStreamKey] = useState('');
   
-  const { config: aiConfig, generateText } = useAIStore();
+  const { config: aiConfig, generateText, getEffectiveKey } = useAIStore();
   const [generatingField, setGeneratingField] = useState(null);
   const [aiSuggestion, setAiSuggestion] = useState(null);
   const [aiKeyword, setAiKeyword] = useState('');
 
   const handleGenerate = async (field) => {
     try {
-      if (!aiConfig.apiKey) {
+      const effectiveKey = getEffectiveKey(aiConfig.provider);
+      if (!effectiveKey) {
         alert('API Key AI belum diatur. Silakan atur di Settings > AI Assistants.');
         return;
       }
@@ -796,7 +797,8 @@ Aturan penting:
 - JANGAN terdengar generic atau template-an
 - Tulis dalam Bahasa Indonesia yang casual tapi tetap informatif
 
-Format output: Pisahkan setiap opsi deskripsi HANYA dengan "|||" tanpa penomoran atau teks tambahan.`;
+PENTING: Pisahkan setiap opsi deskripsi dengan tanda "|||" (tiga garis vertikal). Jangan gunakan penomoran. Contoh format:
+[deskripsi 1]|||[deskripsi 2]|||[deskripsi 3]`;
       } else if (field === 'tags') {
         prompt = `Buatkan 5 set tags YouTube (masing-masing 15 tags) yang sangat relevan untuk video/live stream ini:
 Judul: "${context}"${descContext}${keywordCtx}
@@ -808,11 +810,28 @@ Aturan:
 - Gunakan bahasa yang sesuai dengan target audiens (campuran Indonesia & English boleh)
 - Prioritaskan tags yang orang benar-benar cari di YouTube
 
-Pisahkan setiap set HANYA dengan "|||" tanpa penomoran. Di dalam setiap set, pisahkan tags dengan koma.`;
+PENTING: Pisahkan setiap set dengan tanda "|||" (tiga garis vertikal). Di dalam setiap set, pisahkan tags dengan koma. Jangan gunakan penomoran. Contoh format:
+tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
       }
 
       const result = await generateText(prompt);
-      const options = result.split('|||').map(s => s.trim()).filter(s => s.length > 0);
+      
+      // Robust parsing: try ||| split first, then numbered patterns, then treat as single result
+      let options = result.split('|||').map(s => s.trim()).filter(s => s.length > 0);
+      
+      // If only 1 result from ||| split, try splitting by numbered patterns like "1." "2." "3."
+      if (options.length <= 1) {
+        const numberedSplit = result.split(/\n\s*(?:\d+[\.\)]\s+|\*\*\d+[\.\)]\*\*\s*)/).map(s => s.trim()).filter(s => s.length > 20);
+        if (numberedSplit.length > 1) {
+          options = numberedSplit;
+        }
+      }
+      
+      // If still only 1 option and it's long enough, show it as a single suggestion
+      if (options.length === 0) {
+        options = [result.trim()];
+      }
+
       setAiSuggestion({ field, options });
     } catch (err) {
       alert(`Gagal generate ${field}: ${err.message}`);
