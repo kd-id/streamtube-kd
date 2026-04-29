@@ -765,6 +765,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const { config: aiConfig, generateText } = useAIStore();
   const [generatingField, setGeneratingField] = useState(null);
   const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiKeyword, setAiKeyword] = useState('');
 
   const handleGenerate = async (field) => {
     try {
@@ -775,17 +776,19 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setGeneratingField(field);
       
       const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
+      const keywordCtx = aiKeyword ? ` Focus on these keywords: "${aiKeyword}".` : '';
       let prompt = '';
       if (field === 'title') {
-        prompt = `Buatkan 1 judul YouTube live stream yang sangat menarik, clickbait tapi tetap relevan, tentang "${context}". Maksimal 60 karakter. Jangan gunakan tanda kutip di awal/akhir. Berikan langsung judulnya tanpa pengantar.`;
+        prompt = `Generate 5 highly engaging, clickbait but relevant YouTube live stream titles in English about "${context}".${keywordCtx} Max 60 characters each. Separate each option ONLY with "|||" without numbering or extra text.`;
       } else if (field === 'description') {
-        prompt = `Buatkan deskripsi YouTube live stream yang profesional, SEO friendly, dan menarik tentang "${context}". Sertakan ajakan untuk subscribe dan like. Maksimal 3 paragraf pendek. Berikan langsung hasilnya tanpa pengantar.`;
+        prompt = `Generate 3 professional, SEO friendly YouTube live stream descriptions in English about "${context}".${keywordCtx} Include a call to action to subscribe. Separate each option ONLY with "|||" without numbering or extra text.`;
       } else if (field === 'tags') {
-        prompt = `Berikan 10-15 tag YouTube yang relevan, populer, dan SEO friendly untuk video tentang "${context}". Pisahkan dengan koma. Contoh: tag1, tag2, tag3. Jangan berikan teks lain selain tag.`;
+        prompt = `Generate 5 different sets of 15 YouTube tags in English about "${context}".${keywordCtx} Separate each set ONLY with "|||" without numbering. Inside each set, separate tags with commas.`;
       }
 
       const result = await generateText(prompt);
-      setAiSuggestion({ field, result: result.trim() });
+      const options = result.split('|||').map(s => s.trim()).filter(s => s.length > 0);
+      setAiSuggestion({ field, options });
     } catch (err) {
       alert(`Gagal generate ${field}: ${err.message}`);
     } finally {
@@ -793,9 +796,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
     }
   };
 
-  const applyAiSuggestion = () => {
-    if (!aiSuggestion) return;
-    const { field, result } = aiSuggestion;
+  const applyAiSuggestion = (field, result) => {
     if (field === 'title') setTitle(result.replace(/^["']|["']$/g, '').trim());
     else if (field === 'description') setDescription(result);
     else if (field === 'tags') {
@@ -806,28 +807,30 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   };
 
   const renderAiSuggestion = (fieldName) => {
-    if (aiSuggestion?.field !== fieldName) return null;
+    if (aiSuggestion?.field !== fieldName || !aiSuggestion.options) return null;
     return (
       <div className="ai-suggestion-box">
         <div className="ai-suggestion-header">
           <Sparkles size={13} style={{ color: '#a855f7' }} />
-          <span>AI Suggestion</span>
-        </div>
-        <div className="ai-suggestion-content">
-          {aiSuggestion.result}
-        </div>
-        <div className="ai-suggestion-actions">
-          <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate(fieldName)} disabled={generatingField === fieldName}>
-            <RefreshCw size={12} className={generatingField === fieldName ? 'spin' : ''} /> Generate Lagi
-          </button>
-          <div style={{display:'flex', gap:'6px'}}>
-            <button className="btn btn-secondary btn-sm" onClick={() => setAiSuggestion(null)}>
-              Tolak
+          <span>AI Suggestions</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '4px' }}>
+            <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate(fieldName)} disabled={generatingField === fieldName} title="Generate Lagi" style={{ padding: '4px' }}>
+              <RefreshCw size={13} className={generatingField === fieldName ? 'spin' : ''} />
             </button>
-            <button className="btn btn-primary btn-sm" onClick={applyAiSuggestion}>
-              <Check size={12} /> Gunakan Ini
+            <button className="btn btn-secondary btn-sm" onClick={() => setAiSuggestion(null)} title="Tolak" style={{ padding: '4px', color: '#f87171' }}>
+              <X size={13} />
             </button>
           </div>
+        </div>
+        <div className="ai-suggestion-list" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {aiSuggestion.options.map((opt, idx) => (
+            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', background: 'rgba(0,0,0,0.15)', padding: '8px', borderRadius: '4px' }}>
+              <div style={{ flex: 1, fontSize: '12px', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>{opt}</div>
+              <button className="btn btn-primary btn-sm" onClick={() => applyAiSuggestion(fieldName, opt)} title="Gunakan Ini" style={{ padding: '4px', flexShrink: 0 }}>
+                <Check size={12} />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -1207,6 +1210,13 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="form-group" style={{ background: 'rgba(168, 85, 247, 0.05)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#c084fc', marginBottom: '8px' }}>
+                <Sparkles size={12} /> Kata Kunci AI (Opsional)
+              </label>
+              <input className="form-input" value={aiKeyword} onChange={e => setAiKeyword(e.target.value)} placeholder="Contoh: gaming, lucu, tutorial..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
             </div>
 
             <div className="form-group">
