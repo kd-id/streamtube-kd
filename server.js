@@ -34,7 +34,7 @@ async function createServer() {
     // In production, we serve the statically built files from Vite
     app.use(express.static(path.join(__dirname, 'dist')));
     // SPA Fallback: send index.html for all unused routes
-    app.use('*', (req, res) => {
+    app.use((req, res) => {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     });
     
