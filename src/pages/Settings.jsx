@@ -550,6 +550,15 @@ function AITab() {
     finally { setFetchingModels(false); }
   };
 
+  useEffect(() => {
+    if (provider === 'custom' || provider === 'devin' || !apiKey || !apiKey.trim()) return;
+    const debounceFetch = setTimeout(() => {
+      // Don't fetch if already fetching or if the key is empty
+      handleFetchModels();
+    }, 800);
+    return () => clearTimeout(debounceFetch);
+  }, [provider, apiKey, baseUrl]);
+
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {

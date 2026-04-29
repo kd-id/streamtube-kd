@@ -764,6 +764,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   
   const { config: aiConfig, generateText } = useAIStore();
   const [generatingField, setGeneratingField] = useState(null);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
 
   const handleGenerate = async (field) => {
     try {
@@ -784,18 +785,52 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       }
 
       const result = await generateText(prompt);
-      
-      if (field === 'title') setTitle(result.replace(/^["']|["']$/g, '').trim());
-      else if (field === 'description') setDescription(result.trim());
-      else if (field === 'tags') {
-        const newTags = result.split(',').map(t => t.trim()).filter(t => t);
-        setTags(newTags.slice(0, 15)); // Limit to 15 tags
-      }
+      setAiSuggestion({ field, result: result.trim() });
     } catch (err) {
       alert(`Gagal generate ${field}: ${err.message}`);
     } finally {
       setGeneratingField(null);
     }
+  };
+
+  const applyAiSuggestion = () => {
+    if (!aiSuggestion) return;
+    const { field, result } = aiSuggestion;
+    if (field === 'title') setTitle(result.replace(/^["']|["']$/g, '').trim());
+    else if (field === 'description') setDescription(result);
+    else if (field === 'tags') {
+      const newTags = result.split(',').map(t => t.trim()).filter(t => t);
+      setTags(newTags.slice(0, 15));
+    }
+    setAiSuggestion(null);
+  };
+
+  const renderAiSuggestion = (fieldName) => {
+    if (aiSuggestion?.field !== fieldName) return null;
+    return (
+      <div className="ai-suggestion-box">
+        <div className="ai-suggestion-header">
+          <Sparkles size={13} style={{ color: '#a855f7' }} />
+          <span>AI Suggestion</span>
+        </div>
+        <div className="ai-suggestion-content">
+          {aiSuggestion.result}
+        </div>
+        <div className="ai-suggestion-actions">
+          <button className="btn btn-secondary btn-sm" onClick={() => handleGenerate(fieldName)} disabled={generatingField === fieldName}>
+            <RefreshCw size={12} className={generatingField === fieldName ? 'spin' : ''} /> Generate Lagi
+          </button>
+          <div style={{display:'flex', gap:'6px'}}>
+            <button className="btn btn-secondary btn-sm" onClick={() => setAiSuggestion(null)}>
+              Tolak
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={applyAiSuggestion}>
+              <Check size={12} /> Gunakan Ini
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
   const [showPlatformDropdown, setShowPlatformDropdown] = useState(false);
   const [copiedField, setCopiedField] = useState('');
@@ -1181,6 +1216,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                   {generatingField === 'title' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
                 </button>
               </div>
+              {renderAiSuggestion('title')}
               <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter stream title..." disabled={generatingField === 'title'} />
             </div>
 
@@ -1246,6 +1282,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                       {generatingField === 'description' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
                     </button>
                   </div>
+                  {renderAiSuggestion('description')}
                   <textarea className="form-textarea" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Stream description..." disabled={generatingField === 'description'} />
                 </div>
 
@@ -1273,6 +1310,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
                       {generatingField === 'tags' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
                     </button>
                   </div>
+                  {renderAiSuggestion('tags')}
                   <div className="csm-tags-wrap">
                     <div className="csm-tags-list">
                       {tags.map((t, i) => (
