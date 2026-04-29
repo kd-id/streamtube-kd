@@ -1420,6 +1420,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                       {generatingField === 'description' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
                     </button>
                   </div>
+                  {renderAiSuggestion('description')}
                   <textarea className="form-textarea" rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="Stream description..." disabled={generatingField === 'description'} />
                 </div>
                 <div className="csm-row">
@@ -1443,6 +1444,7 @@ tag1, tag2, tag3|||tag4, tag5, tag6|||tag7, tag8, tag9`;
                       {generatingField === 'tags' ? <RefreshCw size={12} className="spin" /> : <Wand2 size={12} />} Generate AI
                     </button>
                   </div>
+                  {renderAiSuggestion('tags')}
                   <div className="csm-tags-wrap">
                     <div className="csm-tags-list">
                       {tags.map((t, i) => (
