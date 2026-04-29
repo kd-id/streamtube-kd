@@ -41,17 +41,32 @@ export function writeUserData(baseKey, value) {
   
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
-    fetch('/api/userdata', {
+    // Fire-and-forget but track pending writes to prevent race conditions on reload
+    const promise = fetch('/api/userdata', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action: 'set', key: finalKey, value })
     }).catch(err => console.error('Failed to sync user data', err));
+    // Track pending writes
+    if (!window.__pendingWrites) window.__pendingWrites = [];
+    window.__pendingWrites.push(promise);
+    promise.finally(() => {
+      if (window.__pendingWrites) {
+        window.__pendingWrites = window.__pendingWrites.filter(p => p !== promise);
+      }
+    });
   }
 }
 
 /** Pull all user data from backend to localStorage */
 export async function syncUserDataFromServer(token) {
   if (!token) return false;
+  
+  // Wait for any pending writes to complete first (prevents stale data overwriting new data)
+  if (window.__pendingWrites && window.__pendingWrites.length > 0) {
+    try { await Promise.allSettled(window.__pendingWrites); } catch {}
+  }
+  
   try {
     const res = await fetch('/api/userdata', {
       headers: { Authorization: `Bearer ${token}` }
@@ -60,10 +75,13 @@ export async function syncUserDataFromServer(token) {
     if (data.success && data.data) {
       let changed = false;
       for (const [k, v] of Object.entries(data.data)) {
-        if (localStorage.getItem(k) !== v) {
+        const local = localStorage.getItem(k);
+        if (local === null || local === undefined) {
+          // Only write from server if localStorage is EMPTY for this key (first login / new device)
           localStorage.setItem(k, v);
           changed = true;
         }
+        // If localStorage already has data, keep local version (it's newer or same)
       }
       return changed;
     }
