@@ -159,7 +159,7 @@ async function preprocessVideo(inputPath, config, onLog) {
     const args = [
       '-i', inputPath,
       '-c:v', (needsVideoTranscode || needsScale) ? 'libx264' : 'copy',
-      ...(needsVideoTranscode || needsScale ? ['-preset', 'ultrafast', '-threads', '0'] : []),
+      ...(needsVideoTranscode || needsScale ? ['-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1'] : []),
       ...vfArgs,
       ...videoBitrateArgs,
       '-c:a', needsAudioTranscode ? 'aac' : 'copy',
@@ -1009,63 +1009,40 @@ export const apiMiddleware = async (req, res, next) => {
              }
           }
 
+          // ── Shared YouTube-compliant video encoding args (optimized for 1-core VPS) ──
+          const ytVideoArgs = [
+              '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+              '-r', `${parseInt(fps)}`,
+              '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
+              '-nal-hrd', 'cbr',
+              '-pix_fmt', 'yuv420p',
+              '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
+          ];
+
           if (mergedVideo && mergedAudio) {
-              if (vfFilter) {
-                  args = [
-                      '-re',
-                      '-stream_loop', '-1', '-i', mergedVideo,
-                      '-stream_loop', '-1', '-i', mergedAudio,
-                      '-map', '0:v:0', '-map', '1:a:0',
-                      '-vf', vfFilter,
-                      '-c:v', 'libx264', '-preset', 'veryfast',
-                      '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
-                      '-nal-hrd', 'cbr',
-                      '-pix_fmt', 'yuv420p',
-                      '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
-                      '-c:a', 'copy',
-                      '-flvflags', 'no_duration_filesize',
-                      '-avoid_negative_ts', 'make_zero'
-                  ];
-              } else {
-                  args = [
-                      '-re',
-                      '-stream_loop', '-1', '-i', mergedVideo,
-                      '-stream_loop', '-1', '-i', mergedAudio,
-                      '-c:v', 'copy', '-c:a', 'copy',
-                      '-map', '0:v:0', '-map', '1:a:0',
-                      '-flvflags', 'no_duration_filesize',
-                      '-avoid_negative_ts', 'make_zero'
-                  ];
-              }
+              args = [
+                  '-re',
+                  '-stream_loop', '-1', '-i', mergedVideo,
+                  '-stream_loop', '-1', '-i', mergedAudio,
+                  '-map', '0:v:0', '-map', '1:a:0',
+                  ...(vfFilter ? ['-vf', vfFilter] : []),
+                  ...ytVideoArgs,
+                  '-c:a', 'copy',
+                  '-flvflags', 'no_duration_filesize',
+                  '-avoid_negative_ts', 'make_zero'
+              ];
           } else if (mergedVideo) {
-              if (vfFilter) {
-                  args = [
-                      '-re',
-                      '-stream_loop', '-1', '-i', mergedVideo,
-                      '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-                      '-map', '0:v:0', '-map', '1:a:0',
-                      '-vf', vfFilter,
-                      '-c:v', 'libx264', '-preset', 'veryfast',
-                      '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
-                      '-nal-hrd', 'cbr',
-                      '-pix_fmt', 'yuv420p',
-                      '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
-                      '-c:a', 'aac', '-b:a', '128k',
-                      '-flvflags', 'no_duration_filesize',
-                      '-avoid_negative_ts', 'make_zero'
-                  ];
-              } else {
-                  args = [
-                      '-re',
-                      '-stream_loop', '-1', '-i', mergedVideo,
-                      '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-                      '-c:v', 'copy',
-                      '-c:a', 'aac', '-b:a', '128k',
-                      '-map', '0:v:0', '-map', '1:a:0',
-                      '-flvflags', 'no_duration_filesize',
-                      '-avoid_negative_ts', 'make_zero'
-                  ];
-              }
+              args = [
+                  '-re',
+                  '-stream_loop', '-1', '-i', mergedVideo,
+                  '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+                  '-map', '0:v:0', '-map', '1:a:0',
+                  ...(vfFilter ? ['-vf', vfFilter] : []),
+                  ...ytVideoArgs,
+                  '-c:a', 'aac', '-b:a', '128k',
+                  '-flvflags', 'no_duration_filesize',
+                  '-avoid_negative_ts', 'make_zero'
+              ];
           } else if (mergedAudio) {
               args = [
                   '-re',
@@ -1073,11 +1050,7 @@ export const apiMiddleware = async (req, res, next) => {
                   '-f', 'lavfi', '-i', `color=c=black:s=${width}x${height}:r=${fps}`,
                   '-map', '1:v:0', '-map', '0:a:0',
                   ...(vfFilter ? ['-vf', vfFilter] : []),
-                  '-c:v', 'libx264', '-preset', 'ultrafast',
-                  '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
-                  '-nal-hrd', 'cbr',
-                  '-pix_fmt', 'yuv420p',
-                  '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
+                  ...ytVideoArgs,
                   '-c:a', 'copy',
                   '-flvflags', 'no_duration_filesize',
                   '-avoid_negative_ts', 'make_zero'
@@ -1085,9 +1058,6 @@ export const apiMiddleware = async (req, res, next) => {
           } else {
             return sendJSON(res, 400, { error: 'No media files provided' });
           }
-
-          // FLV flags to prevent YouTube rejection
-          args.push('-flvflags', 'no_duration_filesize');
 
           // Progress reporting to stderr for real-time monitoring
           args.push('-progress', 'pipe:2');

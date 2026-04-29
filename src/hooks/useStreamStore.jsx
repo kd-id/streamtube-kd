@@ -148,9 +148,16 @@ function reducer(state, action) {
 }
 
 export function StreamProvider({ children }) {
+  // Sanitize: force all streams to 'offline' on boot — no FFmpeg process survives a page refresh
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
-    savedStreams: readUserData(STREAMS_KEY, [])
+    savedStreams: (readUserData(STREAMS_KEY, []) || []).map(s => ({
+      ...s,
+      status: 'offline',
+      elapsedSeconds: 0,
+      viewers: 0,
+      health: null,
+    })),
   });
 
   const mounted = useRef(false);
