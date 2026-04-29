@@ -4,7 +4,7 @@ import {
   Wifi, Gauge, MonitorPlay, AlertTriangle, Users, ExternalLink,
   Image as ImageIcon, Clock, DollarSign, Tag, ChevronDown, Film,
   Music, ListMusic, Terminal, Link2, Key, Copy, Check, RefreshCw, RotateCcw,
-  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2
+  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2, Sparkles
 } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import ShareModal from '../components/ShareModal';
