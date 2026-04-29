@@ -49,10 +49,12 @@ function buildStreamArgs({ mergedVideo, mergedAudio, vfFilter, tier, fullRtmpUrl
 
   const enc = [
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+    '-profile:v', 'baseline', '-level', '3.1',
     '-r', tier.fps, '-vf', fullVf,
     '-b:v', `${tier.bitrate}k`, '-minrate', `${tier.bitrate}k`, '-maxrate', `${tier.bitrate}k`,
     '-bufsize', `${parseInt(tier.bitrate) * 2}k`, '-nal-hrd', 'cbr', '-pix_fmt', 'yuv420p',
     '-g', `${tier.keyint}`, '-keyint_min', `${tier.keyint}`, '-sc_threshold', '0',
+    '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
   ];
 
   let args = [];
@@ -343,7 +345,11 @@ async function preprocessVideo(inputPath, config, onLog) {
     const args = [
       '-i', inputPath,
       '-c:v', (needsVideoTranscode || needsScale) ? 'libx264' : 'copy',
-      ...(needsVideoTranscode || needsScale ? ['-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1'] : []),
+      ...(needsVideoTranscode || needsScale ? [
+        '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+        '-profile:v', 'baseline', '-level', '3.1',
+        '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
+      ] : []),
       ...vfArgs,
       ...videoBitrateArgs,
       '-c:a', needsAudioTranscode ? 'aac' : 'copy',
@@ -1196,11 +1202,13 @@ export const apiMiddleware = async (req, res, next) => {
           // ── Shared YouTube-compliant video encoding args (optimized for 1-core VPS) ──
           const ytVideoArgs = [
               '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency', '-threads', '1',
+              '-profile:v', 'baseline', '-level', '3.1',
               '-r', `${parseInt(fps)}`,
               '-b:v', `${bitrate}k`, '-minrate', `${bitrate}k`, '-maxrate', `${bitrate}k`, '-bufsize', `${parseInt(bitrate) * 2}k`,
               '-nal-hrd', 'cbr',
               '-pix_fmt', 'yuv420p',
               '-g', `${parseInt(fps) * 2}`, '-keyint_min', `${parseInt(fps) * 2}`, '-sc_threshold', '0',
+              '-x264-params', 'ref=1:bframes=0:cabac=0:trellis=0:8x8dct=0:me=dia:subme=0:weightp=0',
           ];
 
           if (mergedVideo && mergedAudio) {
