@@ -10,6 +10,7 @@ const initialState = {
   baseUrl: '', 
   apiKeys: {}, // { providerId: 'key' }
   baseUrls: {}, // { providerId: 'url' }
+  providerModels: {}, // { providerId: ['model1', 'model2'] }
   customBodyTemplate: '{\n  "messages": [\n    { "role": "user", "content": "{{PROMPT}}" }\n  ],\n  "model": "{{MODEL}}"\n}',
   customResponsePath: 'choices[0].message.content',
 };
@@ -60,12 +61,14 @@ export function useAIStore() {
   if (saved.baseUrl && !initialBaseUrls[saved.provider || 'gemini']) {
     initialBaseUrls[saved.provider || 'gemini'] = saved.baseUrl;
   }
+  const initialProviderModels = saved.providerModels || {};
 
   const [state, dispatch] = useReducer(reducer, {
     ...initialState,
     ...saved,
     apiKeys: initialApiKeys,
     baseUrls: initialBaseUrls,
+    providerModels: initialProviderModels,
     modelName: sanitizeModel(saved.modelName || initialState.modelName),
   });
 
@@ -90,8 +93,18 @@ export function useAIStore() {
         ...updates, 
         apiKeys: newApiKeys,
         baseUrls: newBaseUrls,
+        providerModels: state.providerModels,
         modelName: updates.modelName ? sanitizeModel(updates.modelName) : state.modelName 
       },
+    });
+  };
+
+  const saveProviderModels = (provId, models) => {
+    dispatch({
+      type: 'UPDATE_CONFIG',
+      payload: {
+        providerModels: { ...state.providerModels, [provId]: models }
+      }
     });
   };
 
@@ -320,5 +333,5 @@ export function useAIStore() {
     }
   };
 
-  return { config: state, updateConfig, generateText, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase };
+  return { config: state, updateConfig, generateText, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels };
 }

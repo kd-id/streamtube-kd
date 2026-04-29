@@ -488,7 +488,7 @@ const AI_MODELS = {
 };
 
 function AITab() {
-  const { config, updateConfig, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase } = useAIStore();
+  const { config, updateConfig, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels } = useAIStore();
   const [provider, setProvider] = useState(config.provider || 'gemini');
   
   // Load initial key and base for the selected provider
@@ -504,7 +504,9 @@ function AITab() {
   const [saved, setSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [modSearch, setModSearch] = useState('');
-  const [modelList, setModelList] = useState(AI_MODELS[config.provider || 'gemini'] || AI_MODELS.gemini);
+  
+  // Initialize model list from persisted providerModels or fallback to AI_MODELS
+  const [modelList, setModelList] = useState(config.providerModels?.[config.provider || 'gemini'] || AI_MODELS[config.provider || 'gemini'] || AI_MODELS.gemini);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchMsg, setFetchMsg] = useState('');
   const [testResult, setTestResult] = useState(null);
@@ -521,6 +523,7 @@ function AITab() {
                   customPath !== config.customResponsePath;
 
   const handleProviderSelect = (prov) => {
+    if (provider === prov.id) return;
     setProvider(prov.id);
     
     // Auto-populate devin's key if empty
@@ -530,11 +533,44 @@ function AITab() {
     setApiKey(newKey);
     setBaseUrl(getEffectiveBase(prov.id) || prov.defaultBase);
     
-    const defaults = AI_MODELS[prov.id] || [];
-    setModelList(defaults);
-    setModelName(defaults[0] || '');
+    // Load from persisted models if available
+    const savedModels = config.providerModels?.[prov.id] || AI_MODELS[prov.id] || [];
+    setModelList(savedModels);
+    
+    let nextModel = '';
+    if (prov.id === config.provider && config.modelName) {
+      nextModel = config.modelName;
+    } else {
+      nextModel = savedModels[0] || '';
+    }
+    setModelName(nextModel);
+
+    // Auto-save the provider switch so it doesn't revert when changing tabs
+    updateConfig({
+      provider: prov.id,
+      apiKey: newKey.trim(),
+      baseUrl: (getEffectiveBase(prov.id) || prov.defaultBase).trim(),
+      modelName: nextModel,
+      customBodyTemplate: customTemplate,
+      customResponsePath: customPath.trim()
+    });
+
     setFetchMsg('');
     setTestResult(null);
+  };
+
+  const handleModelSelect = (m) => {
+    setModelName(m);
+    updateConfig({ 
+      provider, 
+      apiKey: apiKey.trim(), 
+      modelName: m, 
+      baseUrl: baseUrl.trim(),
+      customBodyTemplate: customTemplate,
+      customResponsePath: customPath.trim()
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
 
   const handleFetchModels = async () => {
@@ -542,22 +578,25 @@ function AITab() {
     try {
       const models = await fetchAvailableModels(provider, apiKey, baseUrl);
       if (models.length > 0) {
-        setModelList(models);
-        if (!models.includes(modelName)) setModelName(models[0]);
+        let updatedModels = [...models];
+        let currentActive = modelName;
+        
+        // Ensure the currently selected model is not lost and doesn't get reset
+        if (currentActive && !updatedModels.includes(currentActive)) {
+          updatedModels.unshift(currentActive);
+        } else if (!currentActive) {
+          currentActive = updatedModels[0];
+        }
+        
+        setModelList(updatedModels);
+        setModelName(currentActive);
+        saveProviderModels(provider, updatedModels); // Persist globally!
+        
         setFetchMsg(`✓ ${models.length} model ditemukan`);
       } else { setFetchMsg('Tidak ada model ditemukan.'); }
     } catch (e) { setFetchMsg('⚠ ' + e.message); }
     finally { setFetchingModels(false); }
   };
-
-  useEffect(() => {
-    if (provider === 'custom' || provider === 'devin' || !apiKey || !apiKey.trim()) return;
-    const debounceFetch = setTimeout(() => {
-      // Don't fetch if already fetching or if the key is empty
-      handleFetchModels();
-    }, 800);
-    return () => clearTimeout(debounceFetch);
-  }, [provider, apiKey, baseUrl]);
 
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
@@ -708,9 +747,10 @@ function AITab() {
                 ? <div className="ai-model-empty">Model tidak ditemukan.</div>
                 : filteredModels.map(m => (
                   <button
+                    type="button"
                     key={m}
                     className={`ai-model-item ${modelName === m ? 'active' : ''}`}
-                    onClick={() => setModelName(m)}
+                    onClick={() => handleModelSelect(m)}
                     style={modelName === m ? { '--prov-color': activeProvider.color } : {}}
                   >
                     <span className="ai-model-name">{m}</span>
