@@ -161,10 +161,11 @@ export function StreamProvider({ children }) {
   });
 
   const mounted = useRef(false);
-  // Persist savedStreams
+  // Persist savedStreams — strip ephemeral runtime fields so 'live' status never reaches storage
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
-    writeUserData(STREAMS_KEY, state.savedStreams);
+    const cleaned = state.savedStreams.map(({ status, elapsedSeconds, viewers, health, ...rest }) => rest);
+    writeUserData(STREAMS_KEY, cleaned);
   }, [state.savedStreams]);
 
   const goLive = useCallback(() => dispatch({ type: 'GO_LIVE' }), []);
