@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { readUserData, writeUserData } from './useUserKey';
 
 const PlaylistContext = createContext(null);
 
@@ -8,17 +7,43 @@ const PLAYLISTS_KEY = 'streamtube_playlists';
 const INITIAL_PLAYLISTS = [];
 
 export function PlaylistProvider({ children }) {
-  const [playlists, setPlaylists] = useState(() => readUserData(PLAYLISTS_KEY, INITIAL_PLAYLISTS));
+  const [playlists, setPlaylists] = useState(INITIAL_PLAYLISTS);
+  const playlistsRef = useRef(playlists);
+  
+  useEffect(() => { playlistsRef.current = playlists; }, [playlists]);
 
-  const mounted = useRef(false);
+  const getToken = () => localStorage.getItem('streamtube_token');
+
   useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return; }
-    writeUserData(PLAYLISTS_KEY, playlists);
-  }, [playlists]);
+    const init = async () => {
+      const token = getToken();
+      if (token) {
+        try {
+          const res = await fetch('/api/data/playlists', { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json();
+          if (data.success && data.data) {
+            setPlaylists(data.data);
+          }
+        } catch {}
+      }
+    };
+    init();
+  }, []);
+
+  const savePlaylist = (p) => {
+    const token = getToken();
+    if (token && p) {
+      fetch('/api/data/playlists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(p)
+      }).catch(() => {});
+    }
+  };
 
   const createPlaylist = useCallback((data) => {
     const np = {
-      id: Date.now(),
+      id: 'playlist_' + Date.now(),
       name: data.name,
       description: data.description || '',
       playbackMode: data.playbackMode || 'Sequential',
@@ -35,51 +60,64 @@ export function PlaylistProvider({ children }) {
       createdAt: new Date().toISOString(),
     };
     setPlaylists(prev => [...prev, np]);
+    savePlaylist(np);
     return np;
   }, []);
 
   const deletePlaylist = useCallback((id) => {
     setPlaylists(prev => prev.filter(p => p.id !== id));
+    const token = getToken();
+    if (token) {
+      fetch(`/api/data/playlists/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => {});
+    }
   }, []);
 
+  const _updatePlaylist = (id, updater) => {
+    setPlaylists(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      return updater(p);
+    }));
+    setTimeout(() => {
+      const p = playlistsRef.current.find(x => x.id === id);
+      if (p) savePlaylist(p);
+    }, 0);
+  };
+
   const renamePlaylist = useCallback((id, name) => {
-    setPlaylists(prev => prev.map(p => p.id === id ? { ...p, name } : p));
+    _updatePlaylist(id, p => ({ ...p, name }));
   }, []);
 
   const addMediaToPlaylist = useCallback((playlistId, media) => {
-    setPlaylists(prev => prev.map(p =>
-      p.id === playlistId
-        ? { ...p, items: [...p.items, {
-            id: `${p.id}_${Date.now()}`,
-            mediaId: media.id,
-            name: media.name,
-            type: media.type,
-            duration: media.duration,
-            serverPath: media.serverPath || null,
-            serverFilename: media.serverFilename || null,
-            objectUrl: media.objectUrl || null,
-          }] }
-        : p
-    ));
+    _updatePlaylist(playlistId, p => ({
+      ...p,
+      items: [...p.items, {
+        id: `${p.id}_${Date.now()}`,
+        mediaId: media.id,
+        name: media.name,
+        type: media.type,
+        duration: media.duration,
+        serverPath: media.serverPath || null,
+        serverFilename: media.serverFilename || null,
+        objectUrl: media.objectUrl || null,
+      }]
+    }));
   }, []);
 
   const removeItemFromPlaylist = useCallback((playlistId, itemId) => {
-    setPlaylists(prev => prev.map(p =>
-      p.id === playlistId
-        ? { ...p, items: p.items.filter(i => i.id !== itemId) }
-        : p
-    ));
+    _updatePlaylist(playlistId, p => ({ ...p, items: p.items.filter(i => i.id !== itemId) }));
   }, []);
 
   const moveItemInPlaylist = useCallback((playlistId, fromIdx, toIdx) => {
     if (fromIdx === toIdx) return;
-    setPlaylists(prev => prev.map(p => {
-      if (p.id !== playlistId) return p;
+    _updatePlaylist(playlistId, p => {
       const items = [...p.items];
       const [moved] = items.splice(fromIdx, 1);
       items.splice(toIdx, 0, moved);
       return { ...p, items };
-    }));
+    });
   }, []);
 
   return (

@@ -63,9 +63,49 @@ export function getDb() {
       source TEXT DEFAULT 'backend'
     );
 
-    CREATE TABLE IF NOT EXISTS user_data (
-      user_id TEXT,
-      key TEXT,
+    CREATE TABLE IF NOT EXISTS streams (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS playlists (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS overlays (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS media_files (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS youtube_channels (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id TEXT NOT NULL,
+      key TEXT NOT NULL,
       value TEXT,
       PRIMARY KEY (user_id, key),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

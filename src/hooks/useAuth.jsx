@@ -1,6 +1,4 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { syncUserDataFromServer } from './useUserKey';
-
 const AuthContext = createContext(null);
 const TOKEN_KEY = 'streamtube_token';
 
@@ -24,20 +22,17 @@ export function AuthProvider({ children }) {
     if (!token) { setLoading(false); return; }
     fetch('/api/auth/me', { headers: authHeaders(token) })
       .then(r => r.json())
-      .then(async data => {
+      .then(data => {
         if (data.user) {
-          const changed = await syncUserDataFromServer(token);
-          if (changed) {
-            window.location.reload();
-          } else {
-            setUser(data.user);
-          }
+          setUser(data.user);
+        } else {
+          localStorage.removeItem(TOKEN_KEY);
+          setToken(null);
         }
-        else { localStorage.removeItem(TOKEN_KEY); setToken(null); }
       })
       .catch(() => { localStorage.removeItem(TOKEN_KEY); setToken(null); })
       .finally(() => setLoading(false));
-  }, []);
+  }, [token]);
 
   // Register
   const register = useCallback(async (nickname, email, password) => {
@@ -52,7 +47,6 @@ export function AuthProvider({ children }) {
 
       localStorage.setItem(TOKEN_KEY, data.token);
       setToken(data.token);
-      await syncUserDataFromServer(data.token);
       window.location.href = '/';
       return { success: true };
     } catch (err) {
@@ -73,7 +67,6 @@ export function AuthProvider({ children }) {
 
       localStorage.setItem(TOKEN_KEY, data.token);
       setToken(data.token);
-      await syncUserDataFromServer(data.token);
       window.location.href = '/';
       return { success: true };
     } catch (err) {

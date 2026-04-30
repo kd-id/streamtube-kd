@@ -1,7 +1,4 @@
-import { useReducer, useEffect, useRef, useCallback } from 'react';
-import { readUserData, writeUserData } from './useUserKey';
-
-const AI_KEY = 'streamtube_ai_settings';
+import { useReducer, useEffect, useRef, useCallback, useState } from 'react';
 
 // ── Session Cache ────────────────────────────────────────────
 const _aiCache = new Map();
@@ -104,95 +101,114 @@ function getNestedValue(obj, path) {
 
 // ── Hook ─────────────────────────────────────────────────────
 export function useAIStore() {
-  const saved = readUserData(AI_KEY) || {};
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; }, [state]);
 
-  const initialApiKeys = { ...saved.apiKeys };
-  const initialBaseUrls = { ...saved.baseUrls };
-  
-  // Legacy migration: old single apiKey/baseUrl → per-provider
-  if (saved.apiKey && !initialApiKeys[saved.provider || 'gemini']) {
-    initialApiKeys[saved.provider || 'gemini'] = saved.apiKey;
-  }
+  const getToken = () => localStorage.getItem('streamtube_token');
 
-  // ── CLEANUP: Remove cross-contaminated baseUrls ────────────
-  // If a provider's saved URL matches another provider's default, it was leaked — remove it
-  const allDefaults = Object.values(PROVIDER_BASE_URLS).filter(Boolean);
-  for (const provId of Object.keys(initialBaseUrls)) {
-    const url = (initialBaseUrls[provId] || '').replace(/\/+$/, '');
-    const correctDefault = (PROVIDER_BASE_URLS[provId] || '').replace(/\/+$/, '');
-    
-    if (!url) continue;
-    // If it matches a DIFFERENT provider's default → contaminated, delete it
-    if (url !== correctDefault && allDefaults.some(d => d.replace(/\/+$/, '') === url)) {
-      console.warn(`[AI] Cleaned stale baseUrl for ${provId}: "${url}" (belonged to another provider)`);
-      delete initialBaseUrls[provId];
-    }
-    // If it matches its own default → no need to store, delete to keep clean
-    if (url === correctDefault) {
-      delete initialBaseUrls[provId];
-    }
-  }
-  // Clear the legacy baseUrl field entirely
-  const cleanedBaseUrl = '';
-
-  const [state, dispatch] = useReducer(reducer, {
-    ...initialState,
-    ...saved,
-    apiKey: '',  // Never use legacy single key
-    baseUrl: cleanedBaseUrl,
-    apiKeys: initialApiKeys,
-    baseUrls: initialBaseUrls,
-    providerModels: saved.providerModels || {},
-    modelName: sanitizeModel(saved.modelName || initialState.modelName),
-  });
-
-  const mounted = useRef(false);
+  // Initialize from API
   useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return; }
-    writeUserData(AI_KEY, state);
-  }, [state]);
+    const init = async () => {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const res = await fetch('/api/settings/ai_config', { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (data.success && data.data) {
+          const saved = data.data;
+          const initialApiKeys = { ...saved.apiKeys };
+          const initialBaseUrls = { ...saved.baseUrls };
+          
+          if (saved.apiKey && !initialApiKeys[saved.provider || 'gemini']) {
+            initialApiKeys[saved.provider || 'gemini'] = saved.apiKey;
+          }
+
+          const allDefaults = Object.values(PROVIDER_BASE_URLS).filter(Boolean);
+          for (const provId of Object.keys(initialBaseUrls)) {
+            const url = (initialBaseUrls[provId] || '').replace(/\/+$/, '');
+            const correctDefault = (PROVIDER_BASE_URLS[provId] || '').replace(/\/+$/, '');
+            if (!url) continue;
+            if (url !== correctDefault && allDefaults.some(d => d.replace(/\/+$/, '') === url)) {
+              delete initialBaseUrls[provId];
+            }
+            if (url === correctDefault) {
+              delete initialBaseUrls[provId];
+            }
+          }
+
+          dispatch({
+            type: 'UPDATE_CONFIG',
+            payload: {
+              ...initialState,
+              ...saved,
+              apiKey: '',
+              baseUrl: '',
+              apiKeys: initialApiKeys,
+              baseUrls: initialBaseUrls,
+              providerModels: saved.providerModels || {},
+              modelName: sanitizeModel(saved.modelName || initialState.modelName),
+            }
+          });
+        }
+      } catch {}
+    };
+    init();
+  }, []);
+
+  const saveConfig = (cfg) => {
+    const token = getToken();
+    if (token && cfg) {
+      fetch('/api/settings/ai_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(cfg)
+      }).catch(() => {});
+    }
+  };
 
   const updateConfig = (updates) => {
     let newApiKeys = { ...state.apiKeys };
     let newBaseUrls = { ...state.baseUrls };
     const targetProv = updates.provider || state.provider;
     
-    // Only store API key if it's not empty
     if (updates.apiKey !== undefined) {
       if (updates.apiKey.trim()) {
         newApiKeys[targetProv] = updates.apiKey.trim();
       } else {
-        delete newApiKeys[targetProv]; // Remove empty keys
+        delete newApiKeys[targetProv];
       }
     }
     
-    // Only store baseUrl if it differs from the provider's built-in default
     if (updates.baseUrl !== undefined) {
       const defaultUrl = (PROVIDER_BASE_URLS[targetProv] || '').replace(/\/+$/, '');
       const userUrl = (updates.baseUrl || '').replace(/\/+$/, '').trim();
       if (userUrl && userUrl !== defaultUrl) {
         newBaseUrls[targetProv] = userUrl;
       } else {
-        delete newBaseUrls[targetProv]; // Use built-in default
+        delete newBaseUrls[targetProv];
       }
     }
     
-    dispatch({
-      type: 'UPDATE_CONFIG',
-      payload: {
-        ...updates,
-        apiKey: '', // Never persist legacy single key
-        baseUrl: '', // Never persist legacy single URL
-        apiKeys: newApiKeys,
-        baseUrls: newBaseUrls,
-        providerModels: state.providerModels,
-        modelName: updates.modelName ? sanitizeModel(updates.modelName) : state.modelName,
-      },
-    });
+    const nextState = {
+      ...state,
+      ...updates,
+      apiKey: '',
+      baseUrl: '',
+      apiKeys: newApiKeys,
+      baseUrls: newBaseUrls,
+      providerModels: state.providerModels,
+      modelName: updates.modelName ? sanitizeModel(updates.modelName) : state.modelName,
+    };
+
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
+    saveConfig(nextState);
   };
 
   const saveProviderModels = (provId, models) => {
-    dispatch({ type: 'UPDATE_CONFIG', payload: { providerModels: { ...state.providerModels, [provId]: models } } });
+    const nextState = { ...stateRef.current, providerModels: { ...stateRef.current.providerModels, [provId]: models } };
+    dispatch({ type: 'UPDATE_CONFIG', payload: { providerModels: nextState.providerModels } });
+    saveConfig(nextState);
   };
 
   // ── Key / URL helpers (provider-isolated) ──────────────────

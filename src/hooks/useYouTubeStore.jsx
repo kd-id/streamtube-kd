@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
-import { readUserData, writeUserData } from './useUserKey';
 
 const YouTubeContext = createContext(null);
 
@@ -7,28 +6,64 @@ const CREDENTIALS_KEY = 'streamtube_yt_credentials';
 const CHANNELS_KEY = 'streamtube_yt_channels';
 
 export function YouTubeProvider({ children }) {
-  const [credentials, setCredentials] = useState(() =>
-    readUserData(CREDENTIALS_KEY, { clientId: '', clientSecret: '', redirectUri: `${window.location.origin}/auth/youtube/callback` })
-  );
-  const [channels, setChannels] = useState(() => readUserData(CHANNELS_KEY, []));
+  const [credentials, setCredentials] = useState({ clientId: '', clientSecret: '', redirectUri: `${window.location.origin}/auth/youtube/callback` });
+  const [channels, setChannels] = useState([]);
   const [connecting, setConnecting] = useState(false);
 
-  // Persist
-  const mountedCreds = useRef(false);
-  useEffect(() => {
-    if (!mountedCreds.current) { mountedCreds.current = true; return; }
-    writeUserData(CREDENTIALS_KEY, credentials);
-  }, [credentials]);
+  const channelsRef = useRef(channels);
+  useEffect(() => { channelsRef.current = channels; }, [channels]);
 
-  const mountedChans = useRef(false);
-  useEffect(() => {
-    if (!mountedChans.current) { mountedChans.current = true; return; }
-    writeUserData(CHANNELS_KEY, channels);
-  }, [channels]);
+  const getToken = () => localStorage.getItem('streamtube_token');
 
-  // Save API credentials
+  useEffect(() => {
+    const init = async () => {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const credRes = await fetch('/api/settings/yt_credentials', { headers: { Authorization: `Bearer ${token}` } });
+        const credData = await credRes.json();
+        if (credData.success && credData.data) {
+          setCredentials(prev => ({ ...prev, ...credData.data }));
+        }
+
+        const chanRes = await fetch('/api/data/youtube_channels', { headers: { Authorization: `Bearer ${token}` } });
+        const chanData = await chanRes.json();
+        if (chanData.success && chanData.data) {
+          setChannels(chanData.data);
+        }
+      } catch {}
+    };
+    init();
+  }, []);
+
+  const saveChannel = (c) => {
+    const token = getToken();
+    if (token && c) {
+      fetch('/api/data/youtube_channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(c)
+      }).catch(() => {});
+    }
+  };
+
+  const saveCredentialsAPI = (creds) => {
+    const token = getToken();
+    if (token) {
+      fetch('/api/settings/yt_credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(creds)
+      }).catch(() => {});
+    }
+  };
+
   const saveCredentials = useCallback((clientId, clientSecret) => {
-    setCredentials(prev => ({ ...prev, clientId, clientSecret }));
+    setCredentials(prev => {
+      const nc = { ...prev, clientId, clientSecret };
+      saveCredentialsAPI({ clientId, clientSecret });
+      return nc;
+    });
   }, []);
 
   // Start YouTube OAuth to add channel
@@ -102,6 +137,7 @@ export function YouTubeProvider({ children }) {
       };
 
       setChannels(prev => [...prev, newChannel]);
+      saveChannel(newChannel);
       setConnecting(false);
       return newChannel;
     } catch (err) {
@@ -111,32 +147,56 @@ export function YouTubeProvider({ children }) {
     }
   }, [channels, credentials]);
 
-  // Remove channel
   const removeChannel = useCallback((channelId) => {
     setChannels(prev => {
       const next = prev.filter(c => c.id !== channelId);
       if (next.length > 0 && !next.some(c => c.isDefault)) {
         next[0].isDefault = true;
+        saveChannel(next[0]);
       }
       return next;
     });
+    const token = getToken();
+    if (token) {
+      fetch(`/api/data/youtube_channels/${channelId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => {});
+    }
   }, []);
 
-  // Update channel data (e.g. refresh accessToken)
   const updateChannel = useCallback((channelId, updates) => {
     setChannels(prev => prev.map(c => c.id === channelId ? { ...c, ...updates } : c));
+    setTimeout(() => {
+      const c = channelsRef.current.find(x => x.id === channelId);
+      if (c) saveChannel(c);
+    }, 0);
   }, []);
 
-  // Set default channel
   const setDefaultChannel = useCallback((channelId) => {
-    setChannels(prev =>
-      prev.map(c => ({ ...c, isDefault: c.id === channelId }))
-    );
+    setChannels(prev => prev.map(c => {
+      const isDefault = c.id === channelId;
+      if (c.isDefault !== isDefault) {
+        const nc = { ...c, isDefault };
+        saveChannel(nc);
+        return nc;
+      }
+      return c;
+    }));
   }, []);
 
-  // Disconnect all
   const disconnectAll = useCallback(() => {
+    const ids = channelsRef.current.map(c => c.id);
     setChannels([]);
+    const token = getToken();
+    if (token) {
+      ids.forEach(id => {
+        fetch(`/api/data/youtube_channels/${id}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(() => {});
+      });
+    }
   }, []);
 
   const defaultChannel = channels.find(c => c.isDefault) || channels[0] || null;

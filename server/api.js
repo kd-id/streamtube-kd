@@ -770,9 +770,16 @@ export const apiMiddleware = async (req, res, next) => {
         }
 
         // ══════════════════════════════════════
-        // ── USER DATA SYNC ──
+        // ── REST API FOR ENTITIES ──
         // ══════════════════════════════════════
-        if (url === '/api/userdata' && req.method === 'GET') {
+        const entityMatch = url.match(/^\/api\/data\/([a-z_]+)(?:\/(.+))?$/);
+        if (entityMatch) {
+          const entity = entityMatch[1];
+          const entityId = entityMatch[2];
+          const validEntities = ['streams', 'playlists', 'overlays', 'media_files', 'youtube_channels'];
+          
+          if (!validEntities.includes(entity)) return sendJSON(res, 400, { error: 'Invalid entity' });
+
           try {
             const auth = req.headers.authorization;
             if (!auth || !auth.startsWith('Bearer ')) return sendJSON(res, 401, { error: 'Not authenticated' });
@@ -780,40 +787,56 @@ export const apiMiddleware = async (req, res, next) => {
             try { userId = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
             
             const db = getDb();
-            const rows = db.prepare('SELECT key, value FROM user_data WHERE user_id = ?').all(userId);
-            const data = {};
-            rows.forEach(r => { data[r.key] = r.value; });
-            return sendJSON(res, 200, { success: true, data });
+            
+            if (req.method === 'GET') {
+              const rows = db.prepare(`SELECT id, data FROM ${entity} WHERE user_id = ?`).all(userId);
+              const data = rows.map(r => JSON.parse(r.data));
+              return sendJSON(res, 200, { success: true, data });
+            } 
+            else if (req.method === 'POST') {
+              const item = await readBody(req);
+              if (!item.id) return sendJSON(res, 400, { error: 'Item must have an id' });
+              
+              db.prepare(`INSERT INTO ${entity} (id, user_id, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data=excluded.data`).run(item.id, userId, JSON.stringify(item));
+              return sendJSON(res, 200, { success: true });
+            }
+            else if (req.method === 'DELETE' && entityId) {
+              db.prepare(`DELETE FROM ${entity} WHERE id = ? AND user_id = ?`).run(entityId, userId);
+              return sendJSON(res, 200, { success: true });
+            }
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }
+          return;
         }
 
-        if (url === '/api/userdata' && req.method === 'POST') {
+        // ══════════════════════════════════════
+        // ── REST API FOR SETTINGS ──
+        // ══════════════════════════════════════
+        const settingsMatch = url.match(/^\/api\/settings\/([a-zA-Z0-9_]+)$/);
+        if (settingsMatch) {
+          const key = settingsMatch[1];
           try {
             const auth = req.headers.authorization;
             if (!auth || !auth.startsWith('Bearer ')) return sendJSON(res, 401, { error: 'Not authenticated' });
             let userId;
             try { userId = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
             
-            const { action, key, value, data } = await readBody(req);
             const db = getDb();
             
-            if (action === 'set') {
-              db.prepare('INSERT INTO user_data (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value').run(userId, key, typeof value === 'string' ? value : JSON.stringify(value));
-            } else if (action === 'bulk_set') {
-              const stmt = db.prepare('INSERT INTO user_data (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value');
-              const tx = db.transaction((bulk) => {
-                for (const [k, v] of Object.entries(bulk)) {
-                  stmt.run(userId, k, typeof v === 'string' ? v : JSON.stringify(v));
-                }
-              });
-              tx(data);
+            if (req.method === 'GET') {
+              const row = db.prepare('SELECT value FROM user_settings WHERE user_id = ? AND key = ?').get(userId, key);
+              return sendJSON(res, 200, { success: true, data: row ? JSON.parse(row.value) : null });
             }
-            return sendJSON(res, 200, { success: true });
+            else if (req.method === 'POST') {
+              const { value } = await readBody(req);
+              db.prepare('INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value').run(userId, key, JSON.stringify(value));
+              return sendJSON(res, 200, { success: true });
+            }
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }
+          return;
         }
 
         // ══════════════════════════════════════

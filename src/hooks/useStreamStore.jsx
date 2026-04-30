@@ -1,5 +1,4 @@
 import { createContext, useContext, useReducer, useCallback, useEffect, useRef } from 'react';
-import { readUserData, writeUserData } from './useUserKey';
 
 const defaultStreamSettings = {
   title: '',
@@ -68,18 +67,10 @@ function reducer(state, action) {
       return { ...state, settings: { ...state.settings, ...action.payload } };
 
     // Saved streams
-    case 'CREATE_STREAM': {
-      const newStream = {
-        id: 'stream_' + Date.now(),
-        ...action.payload,
-        status: 'offline',
-        viewers: 0,
-        elapsedSeconds: 0,
-        health: null,
-        createdAt: new Date().toISOString(),
-      };
-      return { ...state, savedStreams: [...state.savedStreams, newStream] };
-    }
+    case 'SET_STREAMS':
+      return { ...state, savedStreams: action.payload };
+    case 'CREATE_STREAM':
+      return { ...state, savedStreams: [...state.savedStreams, action.payload] };
     case 'UPDATE_STREAM':
       return {
         ...state,
@@ -148,28 +139,36 @@ function reducer(state, action) {
 }
 
 export function StreamProvider({ children }) {
-  // Default to offline on boot — then sync with backend for actually running streams
-  const [state, dispatch] = useReducer(reducer, {
-    ...initialState,
-    savedStreams: (readUserData(STREAMS_KEY, []) || []).map(s => ({
-      ...s,
-      status: 'offline',
-      elapsedSeconds: 0,
-      viewers: 0,
-      health: null,
-    })),
-  });
+  const [state, dispatch] = useReducer(reducer, initialState);
+  const streamsRef = useRef(state.savedStreams);
+  useEffect(() => { streamsRef.current = state.savedStreams; }, [state.savedStreams]);
 
-  // On mount: check backend for actually running streams and restore their live status + elapsed time
+  const getToken = () => localStorage.getItem('streamtube_token');
+
+  // On mount: fetch streams from DB, then check active status
   useEffect(() => {
-    const syncActive = async () => {
+    const init = async () => {
+      const token = getToken();
+      if (token) {
+        try {
+          const res = await fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json();
+          if (data.success && data.data) {
+            dispatch({
+              type: 'SET_STREAMS',
+              payload: data.data.map(s => ({ ...s, status: 'offline', elapsedSeconds: 0, viewers: 0, health: null }))
+            });
+          }
+        } catch {}
+      }
+
+      // Sync active streams
       try {
         const res = await fetch('/api/streams/active');
         const data = await res.json();
         if (data.streams && data.streams.length > 0) {
           data.streams.forEach(active => {
             if (active.status === 'live' || active.status === 'starting') {
-              // Calculate elapsed seconds from startedAt so timer doesn't reset on refresh
               let elapsed = 0;
               if (active.startedAt) {
                 elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
@@ -181,25 +180,67 @@ export function StreamProvider({ children }) {
         }
       } catch {}
     };
-    syncActive();
+    init();
   }, []);
-
-  const mounted = useRef(false);
-  // Persist savedStreams — strip ephemeral runtime fields
-  useEffect(() => {
-    if (!mounted.current) { mounted.current = true; return; }
-    const cleaned = state.savedStreams.map(({ status, elapsedSeconds, viewers, health, ...rest }) => rest);
-    writeUserData(STREAMS_KEY, cleaned);
-  }, [state.savedStreams]);
 
   const goLive = useCallback(() => dispatch({ type: 'GO_LIVE' }), []);
   const endStream = useCallback(() => dispatch({ type: 'END_STREAM' }), []);
   const tick = useCallback(() => dispatch({ type: 'TICK' }), []);
   const updateSettings = useCallback((s) => dispatch({ type: 'UPDATE_SETTINGS', payload: s }), []);
 
-  const createStream = useCallback((data) => dispatch({ type: 'CREATE_STREAM', payload: data }), []);
-  const updateStream = useCallback((id, updates) => dispatch({ type: 'UPDATE_STREAM', payload: { id, updates } }), []);
-  const deleteStream = useCallback((id) => dispatch({ type: 'DELETE_STREAM', payload: id }), []);
+  const createStream = useCallback((data) => {
+    const newStream = {
+      id: 'stream_' + Date.now(),
+      ...data,
+      status: 'offline',
+      viewers: 0,
+      elapsedSeconds: 0,
+      health: null,
+      createdAt: new Date().toISOString(),
+    };
+    dispatch({ type: 'CREATE_STREAM', payload: newStream });
+    
+    const token = getToken();
+    if (token) {
+      const { status, viewers, elapsedSeconds, health, ...rest } = newStream;
+      fetch('/api/data/streams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(rest)
+      }).catch(() => {});
+    }
+  }, []);
+
+  const updateStream = useCallback((id, updates) => {
+    dispatch({ type: 'UPDATE_STREAM', payload: { id, updates } });
+    
+    // Defer API call slightly to allow state to update, or just build the object
+    setTimeout(() => {
+      const stream = streamsRef.current.find(s => s.id === id);
+      if (stream) {
+        const token = getToken();
+        if (token) {
+          const { status, viewers, elapsedSeconds, health, ...rest } = stream;
+          fetch('/api/data/streams', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(rest)
+          }).catch(() => {});
+        }
+      }
+    }, 0);
+  }, []);
+
+  const deleteStream = useCallback((id) => {
+    dispatch({ type: 'DELETE_STREAM', payload: id });
+    const token = getToken();
+    if (token) {
+      fetch(`/api/data/streams/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => {});
+    }
+  }, []);
 
   // Returns { success, error } for UI feedback
   const startStream = useCallback((id) => {
