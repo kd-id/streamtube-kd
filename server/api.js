@@ -576,7 +576,7 @@ async function mergeFiles(filePaths, outputPath, onLog) {
   }
 }
 
-// ── Multipart parser (minimal, for single file upload) ──
+// ── Multipart parser — streams directly to disk for speed ──
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const contentType = req.headers['content-type'] || '';
@@ -590,26 +590,19 @@ function parseMultipart(req) {
       const buffer = Buffer.concat(chunks);
       const boundaryBuf = Buffer.from(`--${boundary}`);
 
-      // Find parts
-      let start = buffer.indexOf(boundaryBuf) + boundaryBuf.length + 2; // skip \r\n
+      let start = buffer.indexOf(boundaryBuf) + boundaryBuf.length + 2;
       const endBoundary = Buffer.from(`--${boundary}--`);
       const endIdx = buffer.indexOf(endBoundary);
-
       if (endIdx === -1) return reject(new Error('Malformed multipart'));
 
       const partData = buffer.slice(start, endIdx);
-
-      // Parse headers
       const headerEnd = partData.indexOf('\r\n\r\n');
       if (headerEnd === -1) return reject(new Error('No headers'));
 
       const headerStr = partData.slice(0, headerEnd).toString();
       const fileData = partData.slice(headerEnd + 4);
-
-      // Remove trailing \r\n
       const cleanData = fileData.slice(0, fileData.length - 2);
 
-      // Extract filename
       const fnMatch = headerStr.match(/filename="([^"]+)"/);
       const ctMatch = headerStr.match(/Content-Type:\s*(.+)/i);
 
@@ -620,6 +613,91 @@ function parseMultipart(req) {
       });
     });
     req.on('error', reject);
+  });
+}
+
+// ── Stream-to-disk multipart: writes file directly without full RAM buffering ──
+function streamMultipartToDisk(req, destPath) {
+  return new Promise((resolve, reject) => {
+    const contentType = req.headers['content-type'] || '';
+    const boundaryMatch = contentType.match(/boundary=(.+)/);
+    if (!boundaryMatch) return reject(new Error('No boundary'));
+
+    const boundary = `--${boundaryMatch[1]}`;
+    const endBoundary = `${boundary}--`;
+    let headerParsed = false;
+    let filename = 'upload';
+    let mimetype = 'application/octet-stream';
+    let headerBuf = Buffer.alloc(0);
+    let ws = null;
+    let totalBytes = 0;
+    let trailingBuf = Buffer.alloc(0);
+
+    req.on('data', (chunk) => {
+      if (!headerParsed) {
+        headerBuf = Buffer.concat([headerBuf, chunk]);
+        const headerEndIdx = headerBuf.indexOf('\r\n\r\n');
+        if (headerEndIdx === -1) return; // wait for more data
+
+        // Parse headers from the first boundary section
+        const headerSection = headerBuf.slice(0, headerEndIdx).toString();
+        const fnMatch = headerSection.match(/filename="([^"]+)"/);
+        const ctMatch = headerSection.match(/Content-Type:\s*(.+)/i);
+        if (fnMatch) filename = fnMatch[1];
+        if (ctMatch) mimetype = ctMatch[1].trim();
+
+        headerParsed = true;
+        ws = fs.createWriteStream(destPath);
+        ws.on('error', reject);
+
+        // Write remaining data after headers
+        const remaining = headerBuf.slice(headerEndIdx + 4);
+        if (remaining.length > 0) {
+          ws.write(remaining);
+          totalBytes += remaining.length;
+        }
+        headerBuf = null; // free
+      } else {
+        ws.write(chunk);
+        totalBytes += chunk.length;
+      }
+    });
+
+    req.on('end', () => {
+      if (!ws) return reject(new Error('No file data received'));
+      ws.end(() => {
+        // Trim trailing boundary from the written file
+        try {
+          const fd = fs.openSync(destPath, 'r+');
+          const stat = fs.fstatSync(fd);
+          // Read last 256 bytes to find boundary
+          const tailSize = Math.min(stat.size, 512);
+          const tailBuf = Buffer.alloc(tailSize);
+          fs.readSync(fd, tailBuf, 0, tailSize, stat.size - tailSize);
+          const tailStr = tailBuf.toString('binary');
+          
+          // Find the end boundary
+          const endBoundaryIdx = tailStr.lastIndexOf(endBoundary);
+          if (endBoundaryIdx !== -1) {
+            // Also trim the \r\n before the boundary
+            let trimPoint = stat.size - tailSize + endBoundaryIdx;
+            if (trimPoint >= 2) trimPoint -= 2; // remove \r\n before boundary
+            fs.ftruncateSync(fd, trimPoint);
+          }
+          fs.closeSync(fd);
+        } catch (e) {
+          // If trim fails, file is still usable
+          console.warn('[Upload] Boundary trim warning:', e.message);
+        }
+
+        resolve({ filename, mimetype, size: fs.statSync(destPath).size, destPath });
+      });
+    });
+
+    req.on('error', (err) => {
+      if (ws) ws.destroy();
+      reject(err);
+    });
   });
 }
 
@@ -1188,7 +1266,7 @@ export const apiMiddleware = async (req, res, next) => {
           }
         }
 
-        // ── Upload file ──
+        // ── Upload file (streaming to disk for max speed) ──
         if (url === '/api/upload' && req.method === 'POST') {
           try {
             const auth = req.headers.authorization;
@@ -1196,9 +1274,15 @@ export const apiMiddleware = async (req, res, next) => {
             let userId;
             try { userId = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
 
-            const { filename: origName, mimetype, data } = await parseMultipart(req);
+            // First, stream to a temp file on disk (avoids RAM bottleneck)
+            const tmpName = `tmp_${userId}_${Date.now()}`;
+            const tmpPath = path.join(UPLOAD_DIR, tmpName);
+            const result = await streamMultipartToDisk(req, tmpPath);
+
+            const { filename: origName, mimetype } = result;
             const allowed = /video\/|audio\/|image\//;
             if (!allowed.test(mimetype)) {
+              try { fs.unlinkSync(tmpPath); } catch {}
               return sendJSON(res, 400, { error: 'Only video, audio, and image files are allowed' });
             }
 
@@ -1215,13 +1299,16 @@ export const apiMiddleware = async (req, res, next) => {
             const filePath = path.join(categoryDir, finalName);
             const relativePath = `${category}/${finalName}`;
             
-            fs.writeFileSync(filePath, data);
+            // Rename temp file to final destination (instant, no copy needed)
+            fs.renameSync(tmpPath, filePath);
+            const fileSize = fs.statSync(filePath).size;
+
             return sendJSON(res, 200, {
               success: true,
               file: {
-                filename: relativePath, // Use relative path as filename identifier
+                filename: relativePath,
                 originalname: origName,
-                size: data.length,
+                size: fileSize,
                 mimetype,
                 path: filePath,
                 url: `/uploads/${relativePath}`,
