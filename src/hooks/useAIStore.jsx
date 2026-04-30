@@ -211,6 +211,20 @@ export function useAIStore() {
     saveConfig(nextState);
   };
 
+  // ── Delete API Key for a specific provider ─────────────────
+  const deleteApiKey = (provId) => {
+    const prov = provId || state.provider;
+    const newApiKeys = { ...stateRef.current.apiKeys };
+    delete newApiKeys[prov];
+    const nextState = {
+      ...stateRef.current,
+      apiKey: '',
+      apiKeys: newApiKeys,
+    };
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
+    saveConfig(nextState);
+  };
+
   // ── Key / URL helpers (provider-isolated) ──────────────────
   const getEffectiveKey = (prov) => state.apiKeys[prov] || '';
   const getEffectiveBase = (prov) => state.baseUrls[prov] || PROVIDER_BASE_URLS[prov] || '';
@@ -246,7 +260,10 @@ export function useAIStore() {
     const cleanModel = sanitizeModel(model);
     if (prov === 'gemini') {
       const keys = Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)));
+      // Test ALL keys and collect per-key results
+      const results = [];
       for (let i = 0; i < keys.length; i++) {
+        const keyLabel = keys.length > 1 ? `Key ${i+1} (…${keys[i].slice(-6)})` : 'Key';
         try {
           const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${keys[i]}`,
@@ -254,12 +271,19 @@ export function useAIStore() {
               body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }) }
           );
           const data = await res.json();
-          if (data.error) throw new Error(data.error.message);
-          return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
+          if (data.error) {
+            results.push(`${keyLabel}: ❌ ${data.error.message}`);
+          } else {
+            const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
+            results.push(`${keyLabel}: ✅ "${reply}"`);
+          }
         } catch (e) {
-          if (i === keys.length - 1) throw e;
+          results.push(`${keyLabel}: ❌ ${e.message}`);
         }
       }
+      const allFailed = results.every(r => r.includes('❌'));
+      if (allFailed) throw new Error(results.join('\n'));
+      return results.join('\n');
     }
     if (prov === 'anthropic') {
       const url = `${(base || PROVIDER_BASE_URLS.anthropic).replace(/\/$/, '')}/messages`;
@@ -499,6 +523,7 @@ TAGS: <tag1, tag2, tag3, ..., tag20>`;
   return {
     config: state,
     updateConfig,
+    deleteApiKey,
     generateText,
     generateAllMeta,
     fetchAvailableModels,

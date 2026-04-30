@@ -535,7 +535,7 @@ const AI_MODELS = {
 };
 
 function AITab() {
-  const { config, updateConfig, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels } = useAIStore();
+  const { config, updateConfig, deleteApiKey, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels } = useAIStore();
   const [provider, setProvider] = useState(config.provider || 'gemini');
   
   // Load initial key and base for the selected provider
@@ -666,9 +666,17 @@ function AITab() {
     try {
       const effectiveBase = baseUrl || getEffectiveBase(provider);
       const reply = await testConnection(provider, apiKey.trim(), effectiveBase, modelName);
-      setTestResult({ ok: true, msg: `Connection successful! Response: "${reply}"` });
+      setTestResult({ ok: true, msg: reply });
     } catch (e) { setTestResult({ ok: false, msg: e.message }); }
     finally { setTesting(false); }
+  };
+
+  const handleDeleteKey = () => {
+    if (!confirm(`Hapus API Key untuk provider ${activeProvider.name}?`)) return;
+    deleteApiKey(provider);
+    setApiKey('');
+    setTestResult(null);
+    setFetchMsg('');
   };
 
   const handleSave = () => {
@@ -737,10 +745,22 @@ function AITab() {
           </label>
           <div className="pw-field">
             <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={provider === 'gemini' ? 'key1, key2, key3...' : 'Enter API key...'} />
-            <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
+            <button className="pw-eye" onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide' : 'Show'}>
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
+            {getEffectiveKey(provider) && (
+              <button className="pw-eye" onClick={handleDeleteKey} title="Hapus API Key" style={{color: '#ef4444'}}>
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
+          {getEffectiveKey(provider) && (
+            <p style={{fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+              <CheckCircle size={10} style={{color: 'var(--accent-green)'}}/> 
+              Key tersimpan di server
+              {provider === 'gemini' && (() => { const c = getEffectiveKey(provider).split(/[\n,]+/).map(k => k.trim()).filter(Boolean).length; return c > 1 ? ` (${c} keys)` : ''; })()}
+            </p>
+          )}
         </div>
 
         {/* Custom JSON Templating */}
@@ -854,7 +874,7 @@ function AITab() {
           {testResult && (
             <div className={`ai-test-result ${testResult.ok ? 'ok' : 'err'}`}>
               {testResult.ok ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
-              <span>{testResult.msg}</span>
+              <span style={{whiteSpace: 'pre-wrap'}}>{testResult.msg}</span>
             </div>
           )}
         </div>
