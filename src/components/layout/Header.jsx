@@ -24,6 +24,18 @@ export default function Header({ onToggleMobile }) {
     ? user.nickname.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     : 'U';
 
+  const getAvatarSrc = (url) => {
+    if (!url) return null;
+    if (url.startsWith('/uploads/') && url.split('/').length === 3) {
+      // Fix old flat path: /uploads/file.jpg -> /uploads/images/file.jpg
+      const file = url.split('/').pop();
+      return `/uploads/images/${file}`;
+    }
+    return url;
+  };
+
+  const avatarSrc = getAvatarSrc(user?.avatar_url);
+
   return (
     <header className="header">
       {/* Hamburger - mobile only */}
@@ -48,8 +60,8 @@ export default function Header({ onToggleMobile }) {
             style={{ padding: '2px', borderRadius: '50%' }}
             onClick={() => setShowUserMenu(v => !v)}
           >
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="" className="header-avatar-img" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+            {avatarSrc ? (
+              <img src={avatarSrc} alt="" className="header-avatar-img" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
             ) : (
               <div className="header-avatar" style={{ background: user?.avatarColor || 'linear-gradient(135deg, var(--accent-purple), var(--accent-blue))' }}>
                 <span>{initials}</span>
@@ -60,8 +72,8 @@ export default function Header({ onToggleMobile }) {
           {showUserMenu && (
             <div className="user-dropdown">
               <div className="user-dropdown-header">
-                {user?.avatar_url ? (
-                  <img src={user.avatar_url} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
+                {avatarSrc ? (
+                  <img src={avatarSrc} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
                 ) : (
                   <div className="dropdown-avatar" style={{ background: user?.avatarColor || 'linear-gradient(135deg, var(--accent-purple), var(--accent-blue))' }}>
                     {initials}

@@ -64,7 +64,16 @@ function ProfileTab() {
   const { user, updateProfile } = useAuth();
   const [nickname, setNickname] = useState(user?.nickname || '');
   const [email, setEmail] = useState(user?.email || '');
-  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
+  const getAvatarSrc = (url) => {
+    if (!url) return '';
+    if (url.startsWith('/uploads/') && url.split('/').length === 3) {
+      const file = url.split('/').pop();
+      return `/uploads/images/${file}`;
+    }
+    return url;
+  };
+
+  const [avatarUrl, setAvatarUrl] = useState(getAvatarSrc(user?.avatar_url));
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
@@ -92,6 +101,7 @@ function ProfileTab() {
       const data = await res.json();
       if (data.success && data.file) {
         setAvatarUrl(data.file.url);
+        updateProfile({ avatar_url: data.file.url }); // Auto save to database
       } else {
         alert('Upload failed: ' + (data.error || 'Unknown error'));
       }
