@@ -104,8 +104,8 @@ export const streamApi = {
   },
 
   // Start RTMP stream
-  async startStream({ streamId, filename, filePath, playlistData, rtmpUrl, streamKey, bitrate, fps, resolution, loopVideo, sceneData }) {
-    logService.info(LOG_CATEGORIES.STREAM, `Starting stream: ${streamId}`, { rtmpUrl, bitrate, fps, resolution, loopVideo });
+  async startStream({ streamId, filename, filePath, playlistData, rtmpUrl, streamKey, bitrate, fps, resolution, loopVideo, sceneData, delay }) {
+    logService.info(LOG_CATEGORIES.STREAM, `Starting stream: ${streamId}`, { rtmpUrl, bitrate, fps, resolution, loopVideo, delay });
     try {
       const res = await fetch(`${API_BASE}/stream/start`, {
         method: 'POST',
@@ -115,6 +115,7 @@ export const streamApi = {
           bitrate: bitrate || '2500', fps: fps || '30',
           resolution: resolution || '1280x720', loopVideo: loopVideo || false,
           sceneData: sceneData || null,
+          delay: delay || 'none',
         }),
       });
       const data = await res.json();

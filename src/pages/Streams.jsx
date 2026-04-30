@@ -296,6 +296,7 @@ export default function Streams() {
       loopVideo: stream.loopVideo || false,
       sceneData: sceneData ? sceneData.items : null,
       adaptiveEnabled: true,
+      delay: stream.delay || 'none',
     });
 
     if (backendResult && !backendResult.success) {
@@ -1334,12 +1335,24 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
               <input className="form-input" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter stream title..." disabled={generatingField === 'title'} />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Overlay Scene</label>
-              <select className="form-input" value={selectedSceneId} onChange={e => setSelectedSceneId(e.target.value ? Number(e.target.value) : '')}>
-                <option value="">None</option>
-                {scenes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+            <div className="csm-row">
+              <div className="form-group">
+                <label className="form-label">Overlay Scene</label>
+                <select className="form-input" value={selectedSceneId} onChange={e => setSelectedSceneId(e.target.value ? Number(e.target.value) : '')}>
+                  <option value="">None</option>
+                  {scenes.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Add Delay</label>
+                <select className="form-input" value={delay} onChange={(e) => updateForm('delay', e.target.value)}>
+                  <option value="none">None</option>
+                  <option value="30s">30 Seconds</option>
+                  <option value="60s">1 Minute</option>
+                  <option value="5m">5 Minutes</option>
+                  <option value="10m">10 Minutes</option>
+                </select>
+              </div>
             </div>
 
             {tab === 'manual' && (
@@ -1436,49 +1449,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                   </div>
                 </div>
 
-                {/* Additional Settings Toggle */}
-                <div className="csm-additional-toggle" onClick={() => setShowAdditional(!showAdditional)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '16px', marginBottom: '8px', opacity: 0.8, fontSize: '12px' }}>
-                  <ChevronDown size={14} style={{ transform: showAdditional ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-                  <span>Additional settings</span>
-                </div>
 
-                {/* Additional Settings Content */}
-                {showAdditional && (
-                  <div className="csm-additional-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '22px', marginBottom: '16px' }}>
-                    <div className="csm-toggle-item compact" onClick={() => updateForm('autoStart', !autoStart)}>
-                      <span>Enable Auto-start</span>
-                      <div className={`csm-switch ${autoStart ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
-                    </div>
-                    <div className="csm-toggle-item compact" onClick={() => updateForm('autoStop', !autoStop)}>
-                      <span>Enable Auto-stop</span>
-                      <div className={`csm-switch ${autoStop ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
-                    </div>
-                    <div className="csm-toggle-item compact" onClick={() => updateForm('dvr', !dvr)}>
-                      <span>Enable DVR</span>
-                      <div className={`csm-switch ${dvr ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
-                    </div>
-                    <div className="csm-toggle-item compact" onClick={() => updateForm('video360', !video360)}>
-                      <span>360° video</span>
-                      <div className={`csm-switch ${video360 ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
-                    </div>
-                    <div className="form-group" style={{ marginTop: '8px' }}>
-                      <label className="form-label" style={{ fontSize: '11px', opacity: 0.7 }}>Added delay</label>
-                      <select className="form-input" value={delay} onChange={(e) => updateForm('delay', e.target.value)} style={{ background: 'transparent', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.1)', borderRadius: 0, padding: '4px 0' }}>
-                        <option value="none">None</option>
-                        <option value="30s">30 Seconds</option>
-                        <option value="60s">1 Minute</option>
-                      </select>
-                    </div>
-                    <div className="csm-toggle-item compact" onClick={() => updateForm('closedCaptions', !closedCaptions)}>
-                      <span>Closed captions</span>
-                      <div className={`csm-switch ${closedCaptions ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
-                    </div>
-                    <div className="csm-toggle-item compact" onClick={() => updateForm('unlistReplay', !unlistReplay)}>
-                      <span>Unlist live replay once stream ends</span>
-                      <div className={`csm-switch ${unlistReplay ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
-                    </div>
-                  </div>
-                )}
 
                 {/* Schedule */}
                 <div className="form-group">

@@ -1486,7 +1486,8 @@ export const apiMiddleware = async (req, res, next) => {
             streamId, filePath: bodyFilePath, filename, playlistData,
             rtmpUrl, streamKey,
             bitrate = '2500', fps = '30', resolution = '1280x720',
-            loopVideo = false, sceneData = null, adaptiveEnabled = false
+            loopVideo = false, sceneData = null, adaptiveEnabled = false,
+            delay = 'none'
           } = body;
 
           if (!streamId || !rtmpUrl || !streamKey) {
@@ -1597,7 +1598,26 @@ export const apiMiddleware = async (req, res, next) => {
               ? await mergeFiles(validAItems, path.join(MERGED_DIR, `${streamId}_audio.m4a`), pushLog)
               : null;
 
-          pushLog(`System: Pre-processing complete. Starting stream...`);
+          pushLog(`System: Pre-processing complete.`);
+
+          // ── Apply user-configured delay ──
+          const delayMs = delay === '30s' ? 30000 : delay === '60s' ? 60000 : delay === '5m' ? 300000 : delay === '10m' ? 600000 : 0;
+          if (delayMs > 0) {
+            const delaySec = delayMs / 1000;
+            pushLog(`System: Added delay ${delay} — stream will start in ${delaySec}s...`);
+            console.log(`[Stream ${streamId}] Delay: ${delay} (${delaySec}s)`);
+            const s = activeStreams.get(streamId);
+            if (s) s.status = 'waiting_delay';
+            // Countdown log every 10 seconds (or every second if < 30s)
+            const interval = delaySec <= 30 ? 5 : 10;
+            for (let remaining = delaySec; remaining > 0; remaining -= interval) {
+              pushLog(`System: Starting in ${remaining}s...`);
+              await new Promise(r => setTimeout(r, Math.min(interval, remaining) * 1000));
+            }
+            pushLog(`System: Delay complete. Launching stream now...`);
+          } else {
+            pushLog(`System: Starting stream...`);
+          }
 
           // Kill existing
           if (activeStreams.has(streamId)) {
