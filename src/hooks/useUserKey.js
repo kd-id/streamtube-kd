@@ -45,8 +45,7 @@ export function writeUserData(baseKey, value) {
     const promise = fetch('/api/userdata', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ action: 'set', key: finalKey, value }),
-      keepalive: true
+      body: JSON.stringify({ action: 'set', key: finalKey, value })
     }).catch(err => console.error('Failed to sync user data', err));
     // Track pending writes
     if (!window.__pendingWrites) {

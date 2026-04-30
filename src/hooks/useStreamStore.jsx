@@ -185,10 +185,10 @@ export function StreamProvider({ children }) {
   }, []);
 
   const mounted = useRef(false);
-  // Persist savedStreams — strip ephemeral runtime fields and large base64 strings so it fits in fetch keepalive quota
+  // Persist savedStreams — strip ephemeral runtime fields
   useEffect(() => {
     if (!mounted.current) { mounted.current = true; return; }
-    const cleaned = state.savedStreams.map(({ status, elapsedSeconds, viewers, health, thumbnailBase64, ...rest }) => rest);
+    const cleaned = state.savedStreams.map(({ status, elapsedSeconds, viewers, health, ...rest }) => rest);
     writeUserData(STREAMS_KEY, cleaned);
   }, [state.savedStreams]);
 
