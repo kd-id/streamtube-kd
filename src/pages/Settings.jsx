@@ -566,6 +566,18 @@ function AITab() {
   const storedKeys = getEffectiveKey(provider).split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
   const hasKeys = storedKeys.length > 0;
 
+  // Sync model list when server config loads (async) or provider changes
+  useEffect(() => {
+    const serverModels = config.providerModels?.[provider];
+    if (serverModels && serverModels.length > 0) {
+      setModelList(serverModels);
+      // Also sync modelName if current provider matches config provider
+      if (provider === config.provider && config.modelName && serverModels.includes(config.modelName)) {
+        setModelName(config.modelName);
+      }
+    }
+  }, [config.providerModels, provider, config.provider, config.modelName]);
+
   const handleProviderSelect = (prov) => {
     if (provider === prov.id) return;
     setProvider(prov.id);

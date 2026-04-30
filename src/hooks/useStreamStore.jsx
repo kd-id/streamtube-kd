@@ -248,21 +248,20 @@ export function StreamProvider({ children }) {
   const updateStream = useCallback((id, updates) => {
     dispatch({ type: 'UPDATE_STREAM', payload: { id, updates } });
     
-    // Defer API call slightly to allow state to update, or just build the object
-    setTimeout(() => {
-      const stream = streamsRef.current.find(s => s.id === id);
-      if (stream) {
-        const token = getToken();
-        if (token) {
-          const { status, viewers, elapsedSeconds, health, ...rest } = stream;
-          fetch('/api/data/streams', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify(rest)
-          }).catch(() => {});
-        }
+    // Immediately merge updates with current stream and POST to server
+    const stream = streamsRef.current.find(s => s.id === id);
+    if (stream) {
+      const merged = { ...stream, ...updates };
+      const token = getToken();
+      if (token) {
+        const { status, viewers, elapsedSeconds, health, ...rest } = merged;
+        fetch('/api/data/streams', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(rest)
+        }).catch(() => {});
       }
-    }, 0);
+    }
   }, []);
 
   const deleteStream = useCallback((id) => {
