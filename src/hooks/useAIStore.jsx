@@ -214,8 +214,10 @@ export function useAIStore() {
   };
 
   const saveProviderModels = (provId, models) => {
-    const nextState = { ...stateRef.current, providerModels: { ...stateRef.current.providerModels, [provId]: models } };
-    dispatch({ type: 'UPDATE_CONFIG', payload: { providerModels: nextState.providerModels } });
+    const cur = stateRef.current;
+    const nextModels = { ...cur.providerModels, [provId]: models };
+    const nextState = { ...cur, providerModels: nextModels };
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
     saveConfig(nextState);
   };
 
@@ -455,11 +457,6 @@ export function useAIStore() {
 
   // ── Main generateText with cross-provider cascade ──────────
   const generateText = async (promptText, maxTokens = MAX_TOKENS.generate) => {
-    // Check prompt cache
-    const promptCacheKey = getCacheKey('prompt', state.provider, promptText.substring(0, 100));
-    const cachedPrompt = getFromCache(promptCacheKey);
-    if (cachedPrompt) { console.log('[AI] ✓ Prompt cache hit'); return cachedPrompt; }
-
     // Rate limit
     checkRateLimit();
 
@@ -500,7 +497,6 @@ export function useAIStore() {
       tried.push(provId);
       const result = await tryProvider(provId, promptText, maxTokens);
       if (result.success) {
-        setToCache(promptCacheKey, result.text);
         return result.text;
       }
       console.warn(`[AI] Cascade: ${provId} failed (${result.reason}), moving on...`);

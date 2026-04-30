@@ -183,6 +183,40 @@ export function StreamProvider({ children }) {
     init();
   }, []);
 
+  // ── Polling: sync streams from server every 10s for cross-device updates ──
+  const lastSyncHash = useRef('');
+  useEffect(() => {
+    const poll = async () => {
+      const token = getToken();
+      if (!token) return;
+      try {
+        const res = await fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (!data.success || !data.data) return;
+        
+        // Quick hash to avoid unnecessary updates
+        const hash = JSON.stringify(data.data.map(s => ({ id: s.id, title: s.title, privacy: s.privacy, description: s.description, tags: s.tags, category: s.category, channelId: s.channelId, streamKey: s.streamKey, rtmpUrl: s.rtmpUrl, selectedMedia: s.selectedMedia?.id, thumbnailUrl: s.thumbnailUrl, mode: s.mode, scheduleChecked: s.scheduleChecked, scheduleTime: s.scheduleTime, delay: s.delay })));
+        if (hash === lastSyncHash.current) return;
+        lastSyncHash.current = hash;
+
+        // Merge server data with local active status
+        const currentStreams = streamsRef.current;
+        const merged = data.data.map(serverStream => {
+          const local = currentStreams.find(s => s.id === serverStream.id);
+          if (local && (local.status === 'live' || local.status === 'starting')) {
+            // Preserve live/starting status from local
+            return { ...serverStream, status: local.status, elapsedSeconds: local.elapsedSeconds, viewers: local.viewers, health: local.health };
+          }
+          return { ...serverStream, status: 'offline', elapsedSeconds: 0, viewers: 0, health: null };
+        });
+        dispatch({ type: 'SET_STREAMS', payload: merged });
+      } catch {}
+    };
+
+    const interval = setInterval(poll, 10000); // every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   const goLive = useCallback(() => dispatch({ type: 'GO_LIVE' }), []);
   const endStream = useCallback(() => dispatch({ type: 'END_STREAM' }), []);
   const tick = useCallback(() => dispatch({ type: 'TICK' }), []);
