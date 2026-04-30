@@ -1030,8 +1030,10 @@ export const apiMiddleware = async (req, res, next) => {
               return sendJSON(res, 200, { success: true, data: row ? JSON.parse(row.value) : null });
             }
             else if (req.method === 'POST') {
-              const { value } = await readBody(req);
-              db.prepare('INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value').run(userId, key, JSON.stringify(value));
+              const body = await readBody(req);
+              // If frontend sends { value: ... } use it, otherwise use the whole body
+              const valToSave = (body && typeof body === 'object' && 'value' in body) ? body.value : body;
+              db.prepare('INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value').run(userId, key, JSON.stringify(valToSave));
               return sendJSON(res, 200, { success: true });
             }
           } catch (err) {
