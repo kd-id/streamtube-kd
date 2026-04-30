@@ -113,12 +113,13 @@ function PreviewModal({ file, onClose }) {
   const getExt = (name) => name.split('.').pop().toUpperCase();
   const fmt = (b) => (b >= 1048576) ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(0) + ' KB';
 
+  const encPath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
   const playUrl = file.serverFilename
-    ? (file.type === 'video' ? `/api/video/play/${encodeURIComponent(file.serverFilename)}` : `/uploads/${encodeURIComponent(file.serverFilename)}`)
+    ? (file.type === 'video' ? `/api/video/play/${encPath(file.serverFilename)}` : `/uploads/${encPath(file.serverFilename)}`)
     : file.objectUrl || null;
 
   const imageUrl = file.type === 'image'
-    ? (file.serverFilename ? `/uploads/${encodeURIComponent(file.serverFilename)}` : file.objectUrl)
+    ? (file.url || (file.serverFilename ? `/uploads/${encPath(file.serverFilename)}` : file.objectUrl))
     : null;
 
   return (

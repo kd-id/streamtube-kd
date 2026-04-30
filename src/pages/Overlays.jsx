@@ -67,7 +67,8 @@ function GalleryPickerModal({ mediaFiles, onSelect, onClose }) {
         ) : (
           <div className="ov-gallery-grid">
             {images.map(img => {
-              const url = img.objectUrl || img.url || `/uploads/${encodeURIComponent(img.serverFilename || img.name)}`;
+              const encP = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
+              const url = img.objectUrl || img.url || `/uploads/${encP(img.serverFilename || img.name)}`;
               return (
                 <button key={img.id || img.name} className="ov-gallery-item" onClick={() => onSelect(img, url)}>
                   <img src={url} alt={img.name} />

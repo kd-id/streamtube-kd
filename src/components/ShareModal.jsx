@@ -69,7 +69,7 @@ export default function ShareModal({ isOpen, onClose, stream, getDashboardUrl })
   // Resolve thumbnail
   let thumbSrc = null;
   if (stream.selectedMedia?.serverFilename) {
-    thumbSrc = `/api/video/thumbnail/${encodeURIComponent(stream.selectedMedia.serverFilename)}`;
+    thumbSrc = `/api/video/thumbnail/${stream.selectedMedia.serverFilename.split('/').map(s => encodeURIComponent(s)).join('/')}`;
   } else if (stream.thumbnailUrl && !stream.thumbnailUrl.startsWith('blob:')) {
     thumbSrc = stream.thumbnailUrl;
   }

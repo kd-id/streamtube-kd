@@ -96,6 +96,9 @@ function formatTime(s) {
   return `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
 }
 
+// Encode path segments individually (don't encode /)
+const encPath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
+
 export default function Streams() {
   const { savedStreams, createStream, updateStream, deleteStream, startStream, stopStream, tick } = useStream();
   const { channels, defaultChannel, credentials, updateChannel } = useYouTube();
@@ -585,7 +588,7 @@ export default function Streams() {
                         <div className="st-name-cell">
                           <div className="st-thumb">
                             {s.selectedMedia?.serverFilename ? (
-                                <img src={`/api/video/thumbnail/${encodeURIComponent(s.selectedMedia.serverFilename)}`} alt="" onError={(e) => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} />
+                                <img src={`/api/video/thumbnail/${encPath(s.selectedMedia.serverFilename)}`} alt="" onError={(e) => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} />
                               ) : s.thumbnailUrl && !s.thumbnailUrl.startsWith('blob:') ? (
                                 <img src={s.thumbnailUrl} alt="" />
                               ) : s.thumbnailBase64 ? (
@@ -1044,7 +1047,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
 
   const handleGallerySelect = async (imgFile) => {
     try {
-      const url = imgFile.objectUrl || imgFile.url || `/uploads/${encodeURIComponent(imgFile.serverFilename || imgFile.name)}`;
+      const url = imgFile.objectUrl || imgFile.url || `/uploads/${encPath(imgFile.serverFilename || imgFile.name)}`;
       setThumbnailUrl(url);
       setThumbnailServerUrl(url);
       setShowThumbGallery(false);
@@ -1573,7 +1576,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                         <video
                           className="csm-video-player"
                           controls
-                          src={`/api/video/play/${encodeURIComponent(selectedMedia.serverFilename)}`}
+                          src={`/api/video/play/${encPath(selectedMedia.serverFilename)}`}
                         />
                       ) : selectedMedia && selectedMedia.objectUrl ? (
                         <video
@@ -1607,7 +1610,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                       ) : (
                         selectedMedia?.serverFilename ? (
                           <>
-                            <img src={`/api/video/thumbnail/${encodeURIComponent(selectedMedia.serverFilename)}`} alt="" className="csm-thumb-img" onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerHTML='<div class="csm-thumb-empty"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Click to upload</span><small>1280×720</small></div>'; }} />
+                            <img src={`/api/video/thumbnail/${encPath(selectedMedia.serverFilename)}`} alt="" className="csm-thumb-img" onError={(e) => { e.target.style.display='none'; e.target.parentElement.innerHTML='<div class="csm-thumb-empty"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg><span>Click to upload</span><small>1280×720</small></div>'; }} />
                             <div className="csm-thumb-overlay-action">
                               <button className="csm-thumb-icon-btn" title="Upload" onClick={(e) => { e.stopPropagation(); document.getElementById('csm-thumb-input')?.click(); }}><Upload size={14} /></button>
                               <button className="csm-thumb-icon-btn" title="Gallery" onClick={(e) => { e.stopPropagation(); setShowThumbGallery(!showThumbGallery); }}><LayoutGrid size={14} /></button>
@@ -1637,7 +1640,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                         <div className="csm-gallery-grid">
                           {galleryImages.length > 0 ? galleryImages.map(img => (
                             <div key={img.id || img.name} className="csm-gallery-item" onClick={() => handleGallerySelect(img)}>
-                              <img src={img.objectUrl || img.url || `/uploads/${encodeURIComponent(img.serverFilename || img.name)}`} alt={img.name} />
+                              <img src={img.objectUrl || img.url || `/uploads/${encPath(img.serverFilename || img.name)}`} alt={img.name} />
                             </div>
                           )) : (
                             <div className="csm-gallery-empty">No images found in gallery</div>
@@ -1756,7 +1759,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                         <video
                           className="csm-video-player"
                           controls
-                          src={`/api/video/play/${encodeURIComponent(selectedMedia.serverFilename)}`}
+                          src={`/api/video/play/${encPath(selectedMedia.serverFilename)}`}
                         />
                       ) : selectedMedia && selectedMedia.objectUrl ? (
                         <video
@@ -1809,7 +1812,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                         <div className="csm-gallery-grid">
                           {galleryImages.length > 0 ? galleryImages.map(img => (
                             <div key={img.id || img.name} className="csm-gallery-item" onClick={() => handleGallerySelect(img)}>
-                              <img src={img.objectUrl || img.url || `/uploads/${encodeURIComponent(img.serverFilename || img.name)}`} alt={img.name} />
+                              <img src={img.objectUrl || img.url || `/uploads/${encPath(img.serverFilename || img.name)}`} alt={img.name} />
                             </div>
                           )) : (
                             <div className="csm-gallery-empty">No images found in gallery</div>

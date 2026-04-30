@@ -98,7 +98,8 @@ export const streamApi = {
   // Delete a file
   async deleteFile(filename) {
     logService.info(LOG_CATEGORIES.MEDIA, `Deleting file: ${filename}`);
-    const res = await fetch(`${API_BASE}/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    const encPath = filename.split('/').map(s => encodeURIComponent(s)).join('/');
+    const res = await fetch(`${API_BASE}/files/${encPath}`, { method: 'DELETE' });
     return res.json();
   },
 

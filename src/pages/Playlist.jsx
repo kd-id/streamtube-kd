@@ -129,9 +129,9 @@ export default function Playlist() {
                       {[0, 1, 2, 3].map(i => {
                       const t = thumbs[i];
                       const thumbSrc = t?.serverFilename 
-                        ? `/api/video/thumbnail/${encodeURIComponent(t.serverFilename)}`
+                        ? `/api/video/thumbnail/${t.serverFilename.split('/').map(s => encodeURIComponent(s)).join('/')}`
                         : t?.objectUrl && !t.objectUrl.startsWith('blob:') 
-                          ? `/api/video/thumbnail/${encodeURIComponent(t.objectUrl.split('/').pop())}`
+                          ? `/api/video/thumbnail/${t.objectUrl.split('/').pop()}`
                           : null;
                       return (
                         <div key={i} className="pm-thumb-slot">

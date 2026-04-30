@@ -779,7 +779,7 @@ export const apiMiddleware = async (req, res, next) => {
             const tokenPayload = Buffer.from(JSON.stringify({ userId: id, r: token })).toString('base64');
 
             dbLog('info', 'auth', `User registered: ${nickname} (${email})`);
-            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id, nickname, email: email.toLowerCase(), avatarColor, createdAt: new Date().toISOString() } });
+            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id, nickname, email: email.toLowerCase(), avatarColor, avatar_url: null, createdAt: new Date().toISOString() } });
           } catch (err) {
             console.error('[Auth Register]', err);
             return sendJSON(res, 500, { error: err.message });
@@ -802,7 +802,7 @@ export const apiMiddleware = async (req, res, next) => {
             const tokenPayload = Buffer.from(JSON.stringify({ userId: user.id, r: token })).toString('base64');
 
             dbLog('info', 'auth', `User logged in: ${user.nickname}`);
-            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, createdAt: user.created_at } });
+            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, createdAt: user.created_at } });
           } catch (err) {
             console.error('[Auth Login]', err);
             return sendJSON(res, 500, { error: err.message });
@@ -1343,11 +1343,20 @@ export const apiMiddleware = async (req, res, next) => {
         // ── List files ──
         if (url === '/api/files' && req.method === 'GET') {
           try {
-            const files = fs.readdirSync(UPLOAD_DIR).map(name => {
-              const fullPath = path.join(UPLOAD_DIR, name);
-              const stat = fs.statSync(fullPath);
-              return { filename: name, size: stat.size, createdAt: stat.birthtime, url: `/uploads/${name}`, path: fullPath };
-            });
+            const files = [];
+            const categories = ['images', 'videos', 'audio', 'others'];
+            for (const cat of categories) {
+              const catDir = path.join(UPLOAD_DIR, cat);
+              if (!fs.existsSync(catDir)) continue;
+              const catFiles = fs.readdirSync(catDir);
+              for (const name of catFiles) {
+                const fullPath = path.join(catDir, name);
+                const stat = fs.statSync(fullPath);
+                if (stat.isDirectory()) continue;
+                const relativePath = `${cat}/${name}`;
+                files.push({ filename: relativePath, size: stat.size, createdAt: stat.birthtime, url: `/uploads/${relativePath}`, path: fullPath });
+              }
+            }
             return sendJSON(res, 200, { files });
           } catch {
             return sendJSON(res, 200, { files: [] });

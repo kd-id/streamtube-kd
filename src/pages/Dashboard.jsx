@@ -292,7 +292,7 @@ export default function Dashboard() {
                   <div key={stream.id} className="stream-item">
                     <div className="stream-thumb">
                       {stream.selectedMedia?.serverFilename
-                        ? <img src={`/api/video/thumbnail/${encodeURIComponent(stream.selectedMedia.serverFilename)}`} alt="" onError={e => e.target.style.display='none'} />
+                        ? <img src={`/api/video/thumbnail/${stream.selectedMedia.serverFilename.split('/').map(s => encodeURIComponent(s)).join('/')}`} alt="" onError={e => e.target.style.display='none'} />
                         : <Video size={16} />
                       }
                     </div>
