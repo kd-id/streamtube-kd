@@ -88,24 +88,7 @@ export async function syncUserDataFromServer(token) {
       for (const [k, v] of Object.entries(data.data)) {
         const local = localStorage.getItem(k);
         if (local !== v) {
-          // PROTECTION: If both are arrays and local is larger, assume local has unsynced creations.
-          try {
-            if (local && v) {
-              const localParsed = JSON.parse(local);
-              const serverParsed = JSON.parse(v);
-              if (Array.isArray(localParsed) && Array.isArray(serverParsed)) {
-                if (localParsed.length > serverParsed.length) {
-                  console.log(`[Sync] Local array for ${k} is larger. Pushing local to server to prevent data loss.`);
-                  fetch('/api/userdata', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ action: 'set', key: k, value: localParsed })
-                  }).catch(() => {});
-                  continue; // Skip overwriting local with stale server data
-                }
-              }
-            }
-          } catch(e) {}
+
 
           localStorage.setItem(k, v);
           changed = true;
