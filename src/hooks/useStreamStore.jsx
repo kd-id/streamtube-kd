@@ -213,8 +213,22 @@ export function StreamProvider({ children }) {
       } catch {}
     };
 
-    const interval = setInterval(poll, 10000); // every 10 seconds
-    return () => clearInterval(interval);
+    // Poll once initially
+    poll();
+
+    // Sync when user switches back to the tab or window regains focus
+    const handleFocus = () => poll();
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') poll();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, []);
 
   const goLive = useCallback(() => dispatch({ type: 'GO_LIVE' }), []);

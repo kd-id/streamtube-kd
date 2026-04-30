@@ -932,17 +932,28 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
     if (existing) {
       const mode = existing.mode || 'manual';
       setTab(mode);
-      setFormModes(prev => ({
-        ...prev,
-        [mode]: {
-          title: existing.title || '',
-          description: existing.description || '',
-          privacy: existing.privacy || 'unlisted',
-          category: existing.category || 'People & Blogs',
-          tags: existing.tags || [],
-          tagInput: ''
-        }
-      }));
+      
+      const populatedData = {
+        title: existing.title || '',
+        description: existing.description || '',
+        privacy: existing.privacy || 'unlisted',
+        category: existing.category || 'People & Blogs',
+        tags: existing.tags || [],
+        tagInput: '',
+        autoStart: existing.autoStart || false,
+        autoStop: existing.autoStop || false,
+        dvr: existing.dvr !== false,
+        video360: existing.video360 || false,
+        delay: existing.delay || 'none',
+        closedCaptions: existing.closedCaptions || false,
+        unlistReplay: existing.unlistReplay || false
+      };
+
+      setFormModes({
+        manual: { ...populatedData },
+        api: { ...populatedData }
+      });
+      
       setChannelId(existing.channelId || '');
       setThumbnailUrl(existing.thumbnailUrl || null);
       setThumbnailServerUrl(existing.thumbnailUrl && existing.thumbnailUrl.startsWith('/uploads') ? existing.thumbnailUrl : null);
@@ -1149,6 +1160,28 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
         }
       }
 
+      // If we are editing an existing stream that already has a broadcast, DO NOT create a new one!
+      if (editId && existing?.broadcastId) {
+        const data = {
+          title: title.trim(), description, privacy, category, tags, channelId,
+          autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay, 
+          thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
+          scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
+          enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
+          platform: 'youtube',
+          rtmpUrl: existing.rtmpUrl, // Keep existing RTMP
+          streamKey: existing.streamKey, // Keep existing Key
+          dashboardUrl: existing.dashboardUrl,
+          broadcastId: existing.broadcastId,
+          videoUrl: existing.videoUrl,
+          loopVideo, orientation, selectedSceneId,
+        };
+        updateStream(editId, data);
+        setCreatingBroadcast(false);
+        onClose();
+        return;
+      }
+
       try {
         const res = await fetch('/api/youtube/broadcast', {
           method: 'POST',
@@ -1170,11 +1203,11 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
           setCreatingBroadcast(false);
           return;
         }
-        // Save with auto-generated stream key + dashboard URL
+        // Save with auto-generated stream key + dashboard URL (DO NOT save thumbnailBase64)
         const data = {
           title: title.trim(), description, privacy, category, tags, channelId,
           autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay, 
-          thumbnailUrl: thumbnailServerUrl || thumbnailUrl, thumbnailBase64,
+          thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
           scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
           enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
           platform: 'youtube',
