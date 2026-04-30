@@ -647,7 +647,7 @@ function streamMultipartToDisk(req, destPath) {
         if (ctMatch) mimetype = ctMatch[1].trim();
 
         headerParsed = true;
-        ws = fs.createWriteStream(destPath);
+        ws = fs.createWriteStream(destPath, { highWaterMark: 1024 * 1024 });
         ws.on('error', reject);
 
         // Write remaining data after headers
@@ -705,7 +705,7 @@ function streamMultipartToDisk(req, destPath) {
 export const apiMiddleware = async (req, res, next) => {
   const url = req.url;
 
-        // ── Serve uploaded files ──
+        // ── Serve uploaded files (with range support for max download speed) ──
         if (url.startsWith('/uploads/')) {
           const relativePath = decodeURIComponent(url.slice('/uploads/'.length)).replace(/\.\./g, '');
           const filePath = path.join(UPLOAD_DIR, relativePath);
@@ -719,8 +719,29 @@ export const apiMiddleware = async (req, res, next) => {
               '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
               '.gif': 'image/gif', '.webp': 'image/webp',
             };
-            res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'application/octet-stream' });
-            fs.createReadStream(filePath).pipe(res);
+            const stat = fs.statSync(filePath);
+            const contentType = mimeMap[ext] || 'application/octet-stream';
+            const range = req.headers.range;
+
+            if (range) {
+              const parts = range.replace(/bytes=/, '').split('-');
+              const start = parseInt(parts[0], 10);
+              const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
+              res.writeHead(206, {
+                'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': end - start + 1,
+                'Content-Type': contentType,
+              });
+              fs.createReadStream(filePath, { start, end, highWaterMark: 1024 * 1024 }).pipe(res);
+            } else {
+              res.writeHead(200, {
+                'Content-Type': contentType,
+                'Content-Length': stat.size,
+                'Accept-Ranges': 'bytes',
+              });
+              fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 }).pipe(res);
+            }
             return;
           }
           res.writeHead(404);
@@ -2262,10 +2283,10 @@ export const apiMiddleware = async (req, res, next) => {
                 'Content-Length': end - start + 1,
                 'Content-Type': mimeMap[ext] || 'video/mp4',
               });
-              fs.createReadStream(filePath, { start, end }).pipe(res);
+              fs.createReadStream(filePath, { start, end, highWaterMark: 1024 * 1024 }).pipe(res);
             } else {
-              res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'video/mp4', 'Content-Length': stat.size });
-              fs.createReadStream(filePath).pipe(res);
+              res.writeHead(200, { 'Content-Type': mimeMap[ext] || 'video/mp4', 'Content-Length': stat.size, 'Accept-Ranges': 'bytes' });
+              fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 }).pipe(res);
             }
             return;
           }

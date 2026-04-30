@@ -284,8 +284,9 @@ export default function MediaLibrary() {
     setUploadErrors({});
 
     const newEntries = [];
+    const CONCURRENCY = 3; // Upload up to 3 files at once for max speed
 
-    for (let i = 0; i < uploadFiles.length; i++) {
+    const uploadOne = async (i) => {
       const uf = uploadFiles[i];
       try {
         const result = await streamApi.uploadFile(uf.file, (pct) => {
@@ -307,6 +308,15 @@ export default function MediaLibrary() {
         errors[i] = err.message || 'Server tidak terhubung';
         setUploadProgress(prev => ({ ...prev, [i]: 100 }));
       }
+    };
+
+    // Run uploads in batches of CONCURRENCY
+    for (let start = 0; start < uploadFiles.length; start += CONCURRENCY) {
+      const batch = [];
+      for (let j = start; j < Math.min(start + CONCURRENCY, uploadFiles.length); j++) {
+        batch.push(uploadOne(j));
+      }
+      await Promise.all(batch);
     }
 
     setUploadErrors(errors);
