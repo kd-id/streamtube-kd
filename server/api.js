@@ -355,8 +355,9 @@ console.warn = (...args) => {
   }
 };
 
-// ── Network Monitor State ──
+// ── System Monitor State ──
 let lastNetStats = { rx: 0, tx: 0, time: Date.now() };
+let systemStatsCache = null;
 
 // ── Helpers ──
 function readBody(req) {
@@ -1202,14 +1203,20 @@ export const apiMiddleware = async (req, res, next) => {
           return;
         }
 
-        // ── System Stats ──
+        // ── System Stats: Optimized with Cache & Merged Storage ──
         if (url === '/api/system/stats' && req.method === 'GET') {
+          const now = Date.now();
+          // 2 second cache to prevent redundant heavy CPU/Disk IO
+          if (systemStatsCache && (now - systemStatsCache.time < 2000)) {
+            return sendJSON(res, 200, systemStatsCache.data);
+          }
+
           const totalMem = os.totalmem();
           const freeMem = os.freemem();
           const usedMem = totalMem - freeMem;
           const ramUsagePercent = ((usedMem / totalMem) * 100).toFixed(1);
 
-          // Real-time CPU measurement: compare two snapshots 200ms apart
+          // CPU Measurement (Differentiator)
           const getCpuSnapshot = () => {
             const cpus = os.cpus();
             let idle = 0, total = 0;
@@ -1226,6 +1233,7 @@ export const apiMiddleware = async (req, res, next) => {
           const totalDelta = snap2.total - snap1.total;
           const cpuUsagePercent = totalDelta > 0 ? (100 - (100 * idleDelta / totalDelta)).toFixed(1) : '0.0';
 
+          // Network Measurement
           let networkDownStr = '0.00', networkUpStr = '0.00';
           try {
             const out = execSync(os.platform() === 'win32' ? 'netstat -e' : 'cat /proc/net/dev', { timeout: 1000 }).toString();
@@ -1246,27 +1254,51 @@ export const apiMiddleware = async (req, res, next) => {
                 }
               });
             }
-            
-            const now = Date.now();
             const dt = (now - lastNetStats.time) / 1000;
             if (dt > 0 && lastNetStats.rx > 0 && rx > 0) {
-               const rxSpeed = Math.max(0, rx - lastNetStats.rx) / dt;
-               const txSpeed = Math.max(0, tx - lastNetStats.tx) / dt;
-               networkDownStr = (rxSpeed * 8 / 1000000).toFixed(2);
-               networkUpStr = (txSpeed * 8 / 1000000).toFixed(2);
+               networkDownStr = ((Math.max(0, rx - lastNetStats.rx) / dt) * 8 / 1000000).toFixed(2);
+               networkUpStr = ((Math.max(0, tx - lastNetStats.tx) / dt) * 8 / 1000000).toFixed(2);
             }
             if (rx > 0 && tx > 0) lastNetStats = { rx, tx, time: now };
           } catch(err) { }
 
-          return sendJSON(res, 200, {
+          // Storage Info (Merged from /api/storage/info)
+          let storage = { totalGB: '0', freeGB: '0', usedPercent: 0 };
+          try {
+            const driveLetter = path.parse(UPLOAD_DIR).root || 'C:\\';
+            let stotal = 0, sfree = 0;
+            if (os.platform() === 'win32') {
+              const out = execSync(`wmic logicaldisk where "DeviceID='${driveLetter.replace(/\\$/, '')}'" get Size,FreeSpace /format:csv`, { timeout: 2000 }).toString();
+              const lines = out.trim().split('\n').filter(l => l.trim() && !l.startsWith('Node'));
+              if (lines.length > 0) {
+                const parts = lines[lines.length - 1].split(',');
+                sfree = parseInt(parts[1]) || 0; stotal = parseInt(parts[2]) || 0;
+              }
+            } else {
+              const out = execSync(`df -B1 "${UPLOAD_DIR}" | tail -1`, { timeout: 2000 }).toString();
+              const parts = out.trim().split(/\s+/);
+              stotal = parseInt(parts[1]) || 0; sfree = parseInt(parts[3]) || 0;
+            }
+            storage = {
+              totalGB: (stotal / 1073741824).toFixed(1),
+              freeGB: (sfree / 1073741824).toFixed(1),
+              usedPercent: stotal > 0 ? ((stotal - sfree) / stotal * 100) : 0
+            };
+          } catch {}
+
+          const data = {
             ramTotal: (totalMem / 1024 / 1024 / 1024).toFixed(1),
             ramUsed: (usedMem / 1024 / 1024 / 1024).toFixed(1),
             ramPercent: ramUsagePercent,
             cpuPercent: cpuUsagePercent,
             cpuCount: os.cpus().length,
             networkDown: networkDownStr,
-            networkUp: networkUpStr
-          });
+            networkUp: networkUpStr,
+            storage
+          };
+          
+          systemStatsCache = { time: now, data };
+          return sendJSON(res, 200, data);
         }
 
         // ── Speedtest: Real Download (server → client) ──
@@ -2162,8 +2194,11 @@ export const apiMiddleware = async (req, res, next) => {
               return sendJSON(res, 400, { error: broadcast.error.message || 'Failed to create broadcast' });
             }
 
-            // 2) Update the Video for Category and Tags
+            // 2) Update the Video for Category and Tags (Delay needed as video indexing is not instant)
             try {
+              console.log(`[YouTube] Preparing metadata sync for video: ${broadcast.id} (Category: ${category})`);
+              await new Promise(r => setTimeout(r, 1500)); 
+
               const categoryMap = {
                 'Film & Animation': '1', 'Music': '10', 'Sports': '17', 'Gaming': '20',
                 'People & Blogs': '22', 'Comedy': '23', 'Entertainment': '24',
@@ -2180,11 +2215,19 @@ export const apiMiddleware = async (req, res, next) => {
                 if (tags && tags.length > 0) snippet.tags = tags;
                 snippet.description = description || '';
 
-                await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet`, {
+                const updateRes = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet`, {
                   method: 'PUT',
                   headers,
                   body: JSON.stringify({ id: broadcast.id, snippet })
                 });
+                const updateData = await updateRes.json();
+                if (updateRes.ok) {
+                  console.log(`[YouTube] Category/Tags updated successfully for ${broadcast.id}`);
+                } else {
+                  console.warn('[YouTube] Metadata update failed:', updateData.error?.message);
+                }
+              } else {
+                console.warn('[YouTube] Video not found for metadata update (indexing delay?):', broadcast.id);
               }
             } catch (videoErr) {
               console.warn('[YouTube Broadcast] Failed to update category/tags:', videoErr.message);

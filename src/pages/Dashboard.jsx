@@ -14,82 +14,70 @@ function useNetworkMonitor() {
   });
   const [sysInfo, setSysInfo] = useState({ ramTotal: 0, ramPercent: 0, cpuCount: 0, cpuPercent: 0, storageTotal: 0, storageFree: 0, storageUsedPercent: 0 });
   const [history, setHistory] = useState([]);
-  const prevBytes = useRef({ down: 0, up: 0, time: Date.now() });
 
   useEffect(() => {
+    let intervalId;
     const measure = async () => {
+      // Skip polling if tab is hidden to save bandwidth/traffic
+      if (document.visibilityState === 'hidden') return;
+
       const online = navigator.onLine;
       if (!online) {
         setStats(s => ({ ...s, online: false, quality: 'offline' }));
         return;
       }
 
-      // Fetch real bandwidth from backend system stats
-      let dl = 0, ul = 0, cc = 0, rt = 0, rp = 0, cp = 0;
-      try {
-        const sysRes = await fetch('/api/system/stats', { cache: 'no-store' });
-        if (sysRes.ok) {
-          const data = await sysRes.json();
-          dl = parseFloat(data.networkDown || '0');
-          ul = parseFloat(data.networkUp || '0');
-          cc = data.cpuCount || 0;
-          rt = data.ramTotal || 0;
-          rp = parseFloat(data.ramPercent || '0');
-          cp = parseFloat(data.cpuPercent || '0');
-        }
-      } catch { }
-
-      // Fetch storage info (only occasionally, but we'll do it here for simplicity)
-      let stg = { t: 0, f: 0 };
-      try {
-        const stgRes = await fetch('/api/storage/info', { cache: 'no-store' });
-        if (stgRes.ok) {
-          const sdata = await stgRes.json();
-          stg.t = parseFloat(sdata.totalGB || '0');
-          stg.f = parseFloat(sdata.freeGB || '0');
-        }
-      } catch { }
-
-      // Measure ping by fetching a small resource
-      let ping = 0;
       try {
         const t0 = performance.now();
-        await fetch('/api/health', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
-        ping = Math.round(performance.now() - t0);
-      } catch { ping = 0; }
+        const sysRes = await fetch('/api/system/stats', { cache: 'no-store' });
+        const ping = Math.round(performance.now() - t0);
 
-      // Quality assessment
-      let quality = 'poor';
-      if (ul > 5 && ping < 50) quality = 'excellent';
-      else if (ul > 2 && ping < 100) quality = 'good';
-      else if (ul > 0.5) quality = 'fair';
+        if (sysRes.ok) {
+          const data = await sysRes.json();
+          const dl = parseFloat(data.networkDown || '0');
+          const ul = parseFloat(data.networkUp || '0');
+          
+          // Quality assessment
+          let quality = 'poor';
+          if (ul > 5 && ping < 150) quality = 'excellent';
+          else if (ul > 2 && ping < 300) quality = 'good';
+          else if (ul > 0.5) quality = 'fair';
 
-      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-      const type = conn ? conn.effectiveType : 'unknown';
+          const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+          const type = conn ? conn.effectiveType : 'unknown';
 
-      setStats({ upload: +ul.toFixed(1), download: +dl.toFixed(1), ping, quality, online: true, type });
-      setSysInfo({ 
-        ramTotal: rt, ramPercent: rp, 
-        cpuCount: cc, cpuPercent: cp, 
-        storageTotal: stg.t, storageFree: stg.f, 
-        storageUsedPercent: stg.t > 0 ? ((stg.t - stg.f) / stg.t * 100) : 0 
-      });
-      setHistory(prev => {
-        const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        const next = [...prev, { time: now, dl: +dl.toFixed(1), ul: +ul.toFixed(1), ping }];
-        return next.slice(-20);
-      });
+          setStats({ upload: ul, download: dl, ping, quality, online: true, type });
+          setSysInfo({ 
+            ramTotal: data.ramTotal, ramPercent: data.ramPercent, 
+            cpuCount: data.cpuCount, cpuPercent: data.cpuPercent, 
+            storageTotal: data.storage?.totalGB || 0, 
+            storageUsedPercent: data.storage?.usedPercent || 0 
+          });
+          setHistory(prev => {
+            const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const next = [...prev, { time: now, dl, ul, ping }];
+            return next.slice(-20);
+          });
+        }
+      } catch { }
     };
 
     measure();
-    const iv = setInterval(measure, 5000);
+    intervalId = setInterval(measure, 10000); // Polling reduced to every 10 seconds
 
+    const handleFocus = () => measure();
+    window.addEventListener('focus', handleFocus);
     const onOnline = () => setStats(s => ({ ...s, online: true }));
     const onOffline = () => setStats(s => ({ ...s, online: false, quality: 'offline' }));
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
 
-    return () => { clearInterval(iv); window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
+    return () => { 
+      clearInterval(intervalId); 
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', onOnline); 
+      window.removeEventListener('offline', onOffline); 
+    };
   }, []);
 
   return { stats, history, sysInfo };

@@ -183,17 +183,31 @@ export function StreamProvider({ children }) {
     init();
   }, []);
 
-  // ── Polling: sync streams from server every 10s for cross-device updates ──
+  // ── Polling: sync streams from server every 30s for cross-device updates ──
   const lastSyncHash = useRef('');
   useEffect(() => {
     let intervalId;
+    let controller = null;
+
     const poll = async () => {
+      // Skip polling if tab is hidden to save bandwidth/traffic
+      if (document.visibilityState === 'hidden') return;
+
       const token = getToken();
       if (!token) return;
+
+      if (controller) controller.abort();
+      controller = new AbortController();
+
       try {
         const [res, actRes] = await Promise.all([
-          fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } }),
-          fetch('/api/streams/active').catch(() => ({ json: () => ({ streams: [] }) }))
+          fetch('/api/data/streams', { 
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal 
+          }),
+          fetch('/api/streams/active', {
+            signal: controller.signal
+          }).catch(() => ({ json: () => ({ streams: [] }) }))
         ]);
         
         const data = await res.json();
@@ -241,12 +255,14 @@ export function StreamProvider({ children }) {
           return { ...serverStream, status, elapsedSeconds, viewers: local?.viewers || 0, health: local?.health || null };
         });
         dispatch({ type: 'SET_STREAMS', payload: merged });
-      } catch {}
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
     };
 
     // Poll once initially
     poll();
-    intervalId = setInterval(poll, 10000); // Poll every 10 seconds
+    intervalId = setInterval(poll, 30000); // Poll every 30 seconds
 
     // Sync when user switches back to the tab or window regains focus
     const handleFocus = () => poll();
@@ -259,6 +275,7 @@ export function StreamProvider({ children }) {
 
     return () => {
       clearInterval(intervalId);
+      if (controller) controller.abort();
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };

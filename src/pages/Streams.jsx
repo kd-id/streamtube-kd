@@ -1203,11 +1203,12 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
           setCreatingBroadcast(false);
           return;
         }
-        // Save with auto-generated stream key + dashboard URL (DO NOT save thumbnailBase64)
+        // Save with broadcast credentials and PERSIST thumbnailBase64 for later "Start" actions
         const data = {
           title: title.trim(), description, privacy, category, tags, channelId,
           autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay, 
           thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
+          thumbnailBase64, // Keep this so handleStart can find it
           scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
           enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
           platform: 'youtube',
@@ -1234,6 +1235,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
       title: title.trim(), description, privacy, category, tags, channelId,
       autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay, 
       thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
+      thumbnailBase64, // Persist for all modes
       scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
       enableMonetization, mode: tab, resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
       platform, rtmpUrl, streamKey, loopVideo, orientation, selectedSceneId,
