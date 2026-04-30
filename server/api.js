@@ -708,7 +708,16 @@ export const apiMiddleware = async (req, res, next) => {
         // ── Serve uploaded files (with range support for max download speed) ──
         if (url.startsWith('/uploads/')) {
           const relativePath = decodeURIComponent(url.slice('/uploads/'.length)).replace(/\.\./g, '');
-          const filePath = path.join(UPLOAD_DIR, relativePath);
+          let filePath = path.join(UPLOAD_DIR, relativePath);
+          
+          // Auto-fallback: if file not found in subdirectories (like images/file.jpg), check root
+          if (!fs.existsSync(filePath) && relativePath.includes('/')) {
+            const fallbackPath = path.join(UPLOAD_DIR, path.basename(relativePath));
+            if (fs.existsSync(fallbackPath) && !fs.statSync(fallbackPath).isDirectory()) {
+              filePath = fallbackPath;
+            }
+          }
+
           if (fs.existsSync(filePath) && !fs.statSync(filePath).isDirectory()) {
             const ext = path.extname(filePath).toLowerCase();
             const mimeMap = {
