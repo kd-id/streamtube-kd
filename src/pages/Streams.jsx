@@ -791,7 +791,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       }
       setGeneratingField(field);
       
-      const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
+      const context = title || existing?.selectedMedia?.name || 'YouTube Live Stream';
       const themeCtx = aiTheme ? ` The overall theme/mood is: "${aiTheme}".` : '';
       const categoryCtx = category ? ` The YouTube category is: "${category}".` : '';
       const descContext = description ? ` Current description: "${description.substring(0, 200)}".` : '';

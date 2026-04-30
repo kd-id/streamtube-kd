@@ -781,14 +781,14 @@ export const apiMiddleware = async (req, res, next) => {
             ];
             const avatarColor = colors[Math.floor(Math.random() * colors.length)];
 
-            db.prepare('INSERT INTO users (id, nickname, email, password_hash, salt, avatar_color) VALUES (?, ?, ?, ?, ?, ?)').run(id, nickname, email.toLowerCase(), hash, salt, avatarColor);
+            db.prepare('INSERT INTO users (id, nickname, email, password_hash, salt, avatar_color, role) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, nickname, email.toLowerCase(), hash, salt, avatarColor, 'public');
 
             const token = crypto.randomBytes(32).toString('hex');
             // Simple token = base64(userId:random)
             const tokenPayload = Buffer.from(JSON.stringify({ userId: id, r: token })).toString('base64');
 
             dbLog('info', 'auth', `User registered: ${nickname} (${email})`);
-            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id, nickname, email: email.toLowerCase(), avatarColor, avatar_url: null, createdAt: new Date().toISOString() } });
+            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id, nickname, email: email.toLowerCase(), avatarColor, avatar_url: null, role: 'public', createdAt: new Date().toISOString() } });
           } catch (err) {
             console.error('[Auth Register]', err);
             return sendJSON(res, 500, { error: err.message });
@@ -811,7 +811,7 @@ export const apiMiddleware = async (req, res, next) => {
             const tokenPayload = Buffer.from(JSON.stringify({ userId: user.id, r: token })).toString('base64');
 
             dbLog('info', 'auth', `User logged in: ${user.nickname}`);
-            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, createdAt: user.created_at } });
+            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, role: user.role, createdAt: user.created_at } });
           } catch (err) {
             console.error('[Auth Login]', err);
             return sendJSON(res, 500, { error: err.message });
@@ -827,9 +827,9 @@ export const apiMiddleware = async (req, res, next) => {
             let userId;
             try { userId = JSON.parse(Buffer.from(tokenPayload, 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
             const db = getDb();
-            const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, created_at FROM users WHERE id = ?').get(userId);
+            const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, role, created_at FROM users WHERE id = ?').get(userId);
             if (!user) return sendJSON(res, 401, { error: 'User not found' });
-            return sendJSON(res, 200, { user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, createdAt: user.created_at } });
+            return sendJSON(res, 200, { user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, role: user.role, createdAt: user.created_at } });
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }

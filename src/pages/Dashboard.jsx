@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import StatCard from '../components/shared/StatCard';
 import { useStream } from '../hooks/useStreamStore';
 import { useYouTube } from '../hooks/useYouTubeStore';
+import { useAuth } from '../hooks/useAuth';
 import './Dashboard.css';
 
 // Real network monitoring using Navigator API
@@ -98,6 +99,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { isLive, savedStreams } = useStream();
   const { defaultChannel, channels } = useYouTube();
+  const { user } = useAuth();
   const { stats: net, history: netHistory, sysInfo } = useNetworkMonitor();
   
   const [speedTestRunning, setSpeedTestRunning] = useState(false);
@@ -223,25 +225,35 @@ export default function Dashboard() {
             </div>
 
             {/* Speetest Section */}
-            <div style={{ marginTop: '15px', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '12px', fontWeight: 500, color: '#aaa' }}>Speedtest Server VPS</span>
+            {user?.role === 'superadmin' && (
+            <div className="speedtest-container">
+              <div className="speedtest-header">
+                <span className="speedtest-title">Server Speedtest</span>
                 <button 
-                  className={`btn btn-${speedTestRunning ? 'secondary' : 'blue'} btn-sm`} 
+                  className={`btn btn-${speedTestRunning ? 'secondary' : 'blue'} btn-sm st-go-btn ${speedTestRunning ? 'running' : ''}`} 
                   onClick={runSpeedtest} 
                   disabled={speedTestRunning}
                 >
-                  {speedTestRunning ? 'Mengecek...' : 'Run Test'}
+                  {speedTestRunning ? 'TESTING' : 'GO'}
                 </button>
               </div>
-              {speedTestResult && (
-                <div style={{ display: 'flex', gap: '15px', marginTop: '10px', fontSize: '13px' }}>
-                  <div style={{flex: 1}}><ArrowDown size={12} color="#2dd4a8" style={{marginRight:4}}/> <strong>{speedTestResult.download}</strong> Mbps</div>
-                  <div style={{flex: 1}}><ArrowUp size={12} color="#4d8eff" style={{marginRight:4}}/> <strong>{speedTestResult.upload}</strong> Mbps</div>
-                  <div style={{flex: 1}}><Activity size={12} color="#f59e0b" style={{marginRight:4}}/> <strong>{speedTestResult.ping}</strong> ms</div>
+              
+              <div className="speedtest-body">
+                <div className="st-metric">
+                  <span className="st-label"><Activity size={14}/> Ping</span>
+                  <span className="st-value">{speedTestResult ? speedTestResult.ping : '--'}<small>ms</small></span>
                 </div>
-              )}
+                <div className="st-metric primary">
+                  <span className="st-label"><ArrowDown size={14} color="#2dd4a8"/> Download</span>
+                  <span className="st-value">{speedTestResult ? speedTestResult.download : '--'}<small>Mbps</small></span>
+                </div>
+                <div className="st-metric primary">
+                  <span className="st-label"><ArrowUp size={14} color="#4d8eff"/> Upload</span>
+                  <span className="st-value">{speedTestResult ? speedTestResult.upload : '--'}<small>Mbps</small></span>
+                </div>
+              </div>
             </div>
+            )}
 
             {/* Mini bandwidth chart */}
             {netHistory.length > 1 && (
@@ -280,6 +292,7 @@ export default function Dashboard() {
           </div>
 
           {/* VPS Specs Notification (Auto Detect) */}
+          {user?.role === 'superadmin' && (
           <div className="glass-card dash-section" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
              <div style={{ flex: 1, borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '20px' }}>
                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
@@ -311,6 +324,7 @@ export default function Dashboard() {
                </div>
              </div>
           </div>
+          )}
 
           {/* Recent Streams */}
           <div className="glass-card dash-section">

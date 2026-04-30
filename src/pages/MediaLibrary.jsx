@@ -29,6 +29,8 @@ const MUSIC_GRADIENT = 'linear-gradient(135deg, #2dd4a8 0%, #4d8eff 100%)';
 const VIDEO_GRADIENT = 'linear-gradient(135deg, #4d8eff 0%, #a855f7 100%)';
 const IMAGE_GRADIENT = 'linear-gradient(135deg, #ffc144 0%, #ff3b5c 100%)';
 
+import { useAuth } from '../hooks/useAuth';
+
 // ─── Generate video thumbnail ───
 function useVideoThumbnail(file) {
   const [thumb, setThumb] = useState(null);
@@ -66,7 +68,7 @@ function FileCard({ f, onPreview, onDelete, onCategoryEdit, editingCategory, onC
       <div
         className={`file-thumb ${f.type}`}
         style={
-          isImage && f.objectUrl ? { backgroundImage: `url("${f.objectUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' } :
+          isImage && f.objectUrl ? { backgroundImage: `url("${f.objectUrl}")`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundColor: '#000' } :
           thumb ? { backgroundImage: `url("${thumb}")`, backgroundSize: 'cover', backgroundPosition: 'center' } :
           { background: f.type === 'video' ? VIDEO_GRADIENT : isImage ? IMAGE_GRADIENT : MUSIC_GRADIENT }
         }
@@ -109,6 +111,9 @@ function FileCard({ f, onPreview, onDelete, onCategoryEdit, editingCategory, onC
 
 // ─── Preview Modal ───
 function PreviewModal({ file, onClose }) {
+  const { updateProfile } = useAuth();
+  const [updating, setUpdating] = useState(false);
+
   if (!file) return null;
   const getExt = (name) => name.split('.').pop().toUpperCase();
   const fmt = (b) => (b >= 1048576) ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(0) + ' KB';
@@ -121,6 +126,20 @@ function PreviewModal({ file, onClose }) {
   const imageUrl = file.type === 'image'
     ? (file.url || (file.serverFilename ? `/uploads/${encPath(file.serverFilename)}` : file.objectUrl))
     : null;
+
+  const handleSetProfilePic = async () => {
+    if (!imageUrl) return;
+    setUpdating(true);
+    try {
+      await updateProfile({ avatar_url: imageUrl });
+      alert('Foto profil berhasil diubah!');
+      onClose();
+    } catch (err) {
+      alert('Gagal mengubah foto profil: ' + err.message);
+    } finally {
+      setUpdating(false);
+    }
+  };
 
   return (
     <Modal isOpen={true} onClose={onClose} title="Media Preview">
@@ -138,8 +157,8 @@ function PreviewModal({ file, onClose }) {
               )}
             </div>
           ) : file.type === 'image' ? (
-            <div className="media-preview-video-wrap">
-              {imageUrl ? <img src={imageUrl} alt={file.name} className="media-preview-video" style={{ objectFit: 'contain' }} /> : null}
+            <div className="media-preview-video-wrap" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {imageUrl ? <img src={imageUrl} alt={file.name} className="media-preview-video" style={{ objectFit: 'contain', width: '100%', height: '100%' }} /> : null}
             </div>
           ) : (
             <div className="media-preview-audio-wrap">
@@ -160,6 +179,16 @@ function PreviewModal({ file, onClose }) {
             </div>
           )}
         </div>
+        
+        {file.type === 'image' && file.serverFilename && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '10px' }}>
+            <button className="btn btn-blue" onClick={handleSetProfilePic} disabled={updating}>
+              <ImageIcon size={16} style={{ marginRight: 6 }} />
+              {updating ? 'Memproses...' : 'Jadikan Foto Profil'}
+            </button>
+          </div>
+        )}
+
         <div className="media-preview-info">
           {[
             ['Nama', file.name],

@@ -121,6 +121,34 @@ export function getDb() {
       db.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''").run();
       console.log('[DB] Migrated: Added avatar_url to users table.');
     }
+
+    const hasRole = tableInfo.some(col => col.name === 'role');
+    if (!hasRole) {
+      db.prepare("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'public'").run();
+      console.log('[DB] Migrated: Added role to users table.');
+      
+      // Check if there are any users. If yes, make the oldest user superadmin.
+      const firstUser = db.prepare("SELECT id FROM users ORDER BY created_at ASC LIMIT 1").get();
+      if (firstUser) {
+        db.prepare("UPDATE users SET role = 'superadmin' WHERE id = ?").run(firstUser.id);
+        console.log('[DB] Migrated: Set first user as superadmin.');
+      } else {
+        // If no users, create default admin
+        const id = 'user_admin_001';
+        const nickname = 'Super Admin';
+        const email = 'admin@streamtube.local';
+        const password = 'admin123';
+        
+        import('crypto').then(crypto => {
+          const salt = crypto.randomBytes(16).toString('hex');
+          const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+          const avatarColor = 'linear-gradient(135deg, #ff3b5c, #ffc144)';
+          
+          db.prepare('INSERT INTO users (id, nickname, email, password_hash, salt, avatar_color, role) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, nickname, email, hash, salt, avatarColor, 'superadmin');
+          console.log('[DB] Migrated: Created default Super Admin (admin@streamtube.local)');
+        });
+      }
+    }
   } catch (err) {
     console.error('[DB] Migration error:', err.message);
   }

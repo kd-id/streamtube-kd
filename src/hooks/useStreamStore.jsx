@@ -186,28 +186,59 @@ export function StreamProvider({ children }) {
   // ── Polling: sync streams from server every 10s for cross-device updates ──
   const lastSyncHash = useRef('');
   useEffect(() => {
+    let intervalId;
     const poll = async () => {
       const token = getToken();
       if (!token) return;
       try {
-        const res = await fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } });
+        const [res, actRes] = await Promise.all([
+          fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch('/api/streams/active').catch(() => ({ json: () => ({ streams: [] }) }))
+        ]);
+        
         const data = await res.json();
+        const actData = await actRes.json().catch(() => ({ streams: [] }));
+        
         if (!data.success || !data.data) return;
         
+        const activeStreamsMap = {};
+        if (actData.streams) {
+          actData.streams.forEach(a => { activeStreamsMap[a.streamId] = a; });
+        }
+        
         // Quick hash to avoid unnecessary updates
-        const hash = JSON.stringify(data.data.map(s => ({ id: s.id, title: s.title, privacy: s.privacy, description: s.description, tags: s.tags, category: s.category, channelId: s.channelId, streamKey: s.streamKey, rtmpUrl: s.rtmpUrl, selectedMedia: s.selectedMedia?.id, thumbnailUrl: s.thumbnailUrl, mode: s.mode, scheduleChecked: s.scheduleChecked, scheduleTime: s.scheduleTime, delay: s.delay })));
+        const hashPayload = data.data.map(s => ({ 
+          id: s.id, title: s.title, privacy: s.privacy, description: s.description, 
+          tags: s.tags, category: s.category, channelId: s.channelId, streamKey: s.streamKey, 
+          rtmpUrl: s.rtmpUrl, selectedMedia: s.selectedMedia?.id, thumbnailUrl: s.thumbnailUrl, 
+          mode: s.mode, scheduleChecked: s.scheduleChecked, scheduleTime: s.scheduleTime, 
+          delay: s.delay, activeStatus: activeStreamsMap[s.id]?.status || 'offline'
+        }));
+        
+        const hash = JSON.stringify(hashPayload);
         if (hash === lastSyncHash.current) return;
         lastSyncHash.current = hash;
 
         // Merge server data with local active status
         const currentStreams = streamsRef.current;
         const merged = data.data.map(serverStream => {
+          const active = activeStreamsMap[serverStream.id];
           const local = currentStreams.find(s => s.id === serverStream.id);
-          if (local && (local.status === 'live' || local.status === 'starting')) {
-            // Preserve live/starting status from local
-            return { ...serverStream, status: local.status, elapsedSeconds: local.elapsedSeconds, viewers: local.viewers, health: local.health };
+          
+          let status = 'offline';
+          let elapsedSeconds = 0;
+          
+          if (active && (active.status === 'live' || active.status === 'starting')) {
+            status = active.status;
+            if (active.startedAt) {
+               elapsedSeconds = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
+               if (elapsedSeconds < 0) elapsedSeconds = 0;
+            } else if (local && local.elapsedSeconds) {
+               elapsedSeconds = local.elapsedSeconds;
+            }
           }
-          return { ...serverStream, status: 'offline', elapsedSeconds: 0, viewers: 0, health: null };
+          
+          return { ...serverStream, status, elapsedSeconds, viewers: local?.viewers || 0, health: local?.health || null };
         });
         dispatch({ type: 'SET_STREAMS', payload: merged });
       } catch {}
@@ -215,6 +246,7 @@ export function StreamProvider({ children }) {
 
     // Poll once initially
     poll();
+    intervalId = setInterval(poll, 10000); // Poll every 10 seconds
 
     // Sync when user switches back to the tab or window regains focus
     const handleFocus = () => poll();
@@ -226,6 +258,7 @@ export function StreamProvider({ children }) {
     document.addEventListener('visibilitychange', handleVisibility);
 
     return () => {
+      clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleVisibility);
     };

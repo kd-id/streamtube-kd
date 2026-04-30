@@ -59,7 +59,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile, collapsed, onToggle
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map(item => (
+          {navItems.filter(item => !(item.path === '/logs' && user?.role !== 'superadmin')).map(item => (
             <NavLink
               key={item.path}
               to={item.path}
