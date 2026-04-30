@@ -820,6 +820,27 @@ export const apiMiddleware = async (req, res, next) => {
                   const userPrefix = `${userId}_`;
                   const userFiles = files.filter(f => path.basename(f).startsWith(userPrefix));
                   
+                  // 1. Remove ghost records from DB (files that no longer exist on disk)
+                  const existingRecords = db.prepare('SELECT id, data FROM media_files WHERE user_id = ?').all(userId);
+                  existingRecords.forEach(row => {
+                    try {
+                      const data = JSON.parse(row.data);
+                      let fileExists = false;
+                      if (data.serverPath && fs.existsSync(data.serverPath)) {
+                        fileExists = true;
+                      } else if (data.serverFilename) {
+                        const checkPath = path.join(UPLOAD_DIR, data.serverFilename);
+                        if (fs.existsSync(checkPath)) fileExists = true;
+                      }
+                      
+                      if (!fileExists) {
+                        db.prepare('DELETE FROM media_files WHERE id = ? AND user_id = ?').run(row.id, userId);
+                        console.log(`[Sync] Removed ghost DB record: ${data.name}`);
+                      }
+                    } catch (err) {}
+                  });
+
+                  // 2. Add missing physical files to DB
                   userFiles.forEach(f => {
                     // f is the relative path like 'images/123_abc.jpg'
                     const exists = db.prepare('SELECT id FROM media_files WHERE user_id = ? AND data LIKE ?').get(userId, `%"serverFilename":"${f}"%`);
@@ -850,6 +871,7 @@ export const apiMiddleware = async (req, res, next) => {
                         };
                         
                         db.prepare(`INSERT INTO media_files (id, user_id, data) VALUES (?, ?, ?)`).run(newMedia.id, userId, JSON.stringify(newMedia));
+                        console.log(`[Sync] Added missing physical file to DB: ${f}`);
                       } catch (err) {
                         console.error('[Sync] Error recovering file:', err);
                       }
