@@ -612,7 +612,7 @@ export default function Streams() {
                             <span className="st-meta" style={{ display: 'flex', gap: '8px', alignItems: 'center', opacity: 0.8, marginTop: '2px' }}>
                               <span>Dibuat: {s.createdAt ? new Date(s.createdAt).toLocaleDateString('id-ID', {day:'numeric',month:'short',year:'numeric'}) : '--'}</span>
                               <span style={{ color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', background: 'rgba(45, 212, 168, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-                                <CheckCircle2 size={10} /> Server
+                                <CheckCircle size={10} /> Server
                               </span>
                             </span>
                             {s.scheduleChecked && s.scheduleTime && (
@@ -780,7 +780,7 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const { config: aiConfig, generateText, generateAllMeta, getEffectiveKey, getRemainingRequests } = useAIStore();
   const [generatingField, setGeneratingField] = useState(null); // 'title'|'description'|'tags'|'all'
   const [aiSuggestion, setAiSuggestion] = useState(null);
-  const [aiKeyword, setAiKeyword] = useState('');
+  const [aiTheme, setAiTheme] = useState('');
 
   const handleGenerate = async (field) => {
     try {
@@ -792,31 +792,32 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
       setGeneratingField(field);
       
       const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
-      const keywordCtx = aiKeyword ? ` Focus on these keywords: "${aiKeyword}".` : '';
+      const themeCtx = aiTheme ? ` The overall theme/mood is: "${aiTheme}".` : '';
+      const categoryCtx = category ? ` The YouTube category is: "${category}".` : '';
       const descContext = description ? ` Current description: "${description.substring(0, 200)}".` : '';
       let prompt = '';
       if (field === 'title') {
-        prompt = `You are a viral YouTube title expert. Generate 5 DIFFERENT title options for a video/live stream about "${context}".${keywordCtx}
+        prompt = `You are a viral YouTube title expert. Generate 5 DIFFERENT title options for a video/live stream about "${context}".${themeCtx}${categoryCtx}
 
 Write the titles in American English, but strictly follow this instruction:
-Gabungan antara SEO + curiosity + emosi. Make it highly engaging, slightly clickbait but honest. Max 70 characters.
+Gabungan antara SEO + curiosity + emosi. Make it highly engaging, slightly clickbait but honest. Max 70 characters. The titles should match the theme/mood and category.
 
 Separate each title ONLY with "|||". No numbering, no quotes, no extra text.`;
       } else if (field === 'description') {
-        prompt = `You are a successful YouTuber writing a description for your video/live stream titled "${context}".${keywordCtx}
+        prompt = `You are a successful YouTuber writing a description for your video/live stream titled "${context}".${themeCtx}${categoryCtx}
 
 Write 3 DIFFERENT full-length YouTube descriptions (each 150-300 words).
 
 Write the descriptions in American English, but strictly follow this instruction:
-Deskripsi YouTube yang SEO + natural + sedikit clickbait (gak kaku, terasa manusia). Include a hook, bullet points for value, and a natural call-to-action. Include 4-6 emojis naturally and 6-8 hashtags at the end. Do NOT sound like ChatGPT.
+Deskripsi YouTube yang SEO + natural + sedikit clickbait (gak kaku, terasa manusia). The tone should match the theme/mood. Include a hook, bullet points for value, and a natural call-to-action. Include 4-6 emojis naturally and 6-8 hashtags at the end. Do NOT sound like ChatGPT.
 
 IMPORTANT: Separate each description with "|||". No numbering.`;
       } else if (field === 'tags') {
         prompt = `Generate 5 DIFFERENT sets of YouTube tags for this video/live stream:
-Title: "${context}"${descContext}${keywordCtx}
+Title: "${context}"${descContext}${themeCtx}${categoryCtx}
 
 Strictly follow this instruction:
-Generate tag sesuai judul + deskripsi maksimal 20 Tag per set. Make sure they are highly relevant search terms. Mix broad terms, long-tail phrases, and niche terms.
+Generate tag sesuai judul + deskripsi + tema + category, maksimal 20 Tag per set. Make sure they are highly relevant search terms. Mix broad terms, long-tail phrases, and niche terms.
 
 Write the tags in English. 
 
@@ -860,7 +861,8 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
       const context = existing?.selectedMedia?.name || (tab === 'manual' ? title : 'YouTube Live Stream');
       const { title: genTitle, description: genDesc, tags: genTags } = await generateAllMeta({
         context: context || 'YouTube Live Stream',
-        keywords: aiKeyword,
+        theme: aiTheme,
+        category,
       });
       // Apply all three at once
       if (genTitle) setTitle(genTitle);
@@ -1304,7 +1306,7 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
             <div className="form-group" style={{ background: 'rgba(168, 85, 247, 0.05)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#c084fc', marginBottom: 0 }}>
-                  <Sparkles size={12} /> AI Keywords (Optional)
+                  <Sparkles size={12} /> AI Theme (Optional)
                 </label>
                 <button
                   className="btn btn-primary btn-sm"
@@ -1318,9 +1320,9 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                     : <><Zap size={11} /> Generate All</>}
                 </button>
               </div>
-              <input className="form-input" value={aiKeyword} onChange={e => setAiKeyword(e.target.value)} placeholder="e.g. gaming, tutorial, music..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
+              <input className="form-input" value={aiTheme} onChange={e => setAiTheme(e.target.value)} placeholder="e.g. Cozy, Energetic, Chill, Aesthetic..." style={{ fontSize: '12px', padding: '8px 10px', minHeight: '32px' }} />
               <p style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', marginBottom: 0 }}>
-                ⚡ Generate All fills title, description &amp; tags in <strong>one API request</strong> — saves tokens &amp; uses cache. <span style={{ color: '#a855f7' }}>({getRemainingRequests()} requests remaining)</span>
+                ⚡ Generate All fills title, description &amp; tags sesuai <strong>tema + category</strong> dalam <strong>satu API request</strong>. <span style={{ color: '#a855f7' }}>({getRemainingRequests()} requests remaining)</span>
               </p>
             </div>
 

@@ -2,7 +2,15 @@ import { useReducer, useEffect, useRef, useCallback, useState } from 'react';
 
 // ── Session Cache ────────────────────────────────────────────
 const _aiCache = new Map();
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — auto-clear for fresh results
+
+// Auto-purge expired cache entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of _aiCache) {
+    if (now - val.ts > CACHE_TTL_MS) _aiCache.delete(key);
+  }
+}, CACHE_TTL_MS);
 
 function getCacheKey(...parts) {
   return parts.map(p => String(p || '').toLowerCase().trim()).join('|');
@@ -503,19 +511,20 @@ export function useAIStore() {
   };
 
   // ── Generate All Meta (1 call = title + desc + tags) ───────
-  const generateAllMeta = async ({ context, keywords = '' } = {}) => {
+  const generateAllMeta = async ({ context, theme = '', category = '' } = {}) => {
     const cleanModel = sanitizeModel(state.modelName);
-    const cacheKey = getCacheKey('meta', state.provider, cleanModel, context, keywords);
+    const cacheKey = getCacheKey('meta', state.provider, cleanModel, context, theme, category);
     const cached = getFromCache(cacheKey);
     if (cached) { console.log('[AI] ✓ Meta cache hit for:', context); return cached; }
 
-    const keywordLine = keywords ? `\nFocus keywords: ${keywords}` : '';
-    const prompt = `You are a top-tier YouTube content strategist. Generate complete metadata for a video/live stream about: "${context}"${keywordLine}
+    const themeLine = theme ? `\nTheme/Mood: "${theme}"` : '';
+    const categoryLine = category ? `\nYouTube Category: "${category}"` : '';
+    const prompt = `You are a top-tier YouTube content strategist. Generate complete metadata for a video/live stream about: "${context}"${themeLine}${categoryLine}
 
 Write the final output in American English, but strictly follow these instructions:
-1. TITLE: Gabungan antara SEO + curiosity + emosi. Make it highly engaging, clickbait but honest. Max 70 characters.
-2. DESCRIPTION: Deskripsi YouTube yang SEO + natural + sedikit clickbait (gak kaku, terasa manusia). Include a hook, bullet points for value, and a natural call-to-action. Include 4-6 emojis naturally and 6-8 hashtags at the end.
-3. TAGS: Generate tag sesuai judul + deskripsi maksimal 20 Tag. Make sure they are highly relevant search terms.
+1. TITLE: Gabungan antara SEO + curiosity + emosi. Make it highly engaging, clickbait but honest. Max 70 characters. Match the theme/mood and category.
+2. DESCRIPTION: Deskripsi YouTube yang SEO + natural + sedikit clickbait (gak kaku, terasa manusia). Tone harus sesuai tema. Include a hook, bullet points for value, and a natural call-to-action. Include 4-6 emojis naturally and 6-8 hashtags at the end.
+3. TAGS: Generate tag sesuai judul + deskripsi + tema + category, maksimal 20 Tag. Make sure they are highly relevant search terms.
 
 Respond EXACTLY in this format (no markdown, no extra commentary):
 
