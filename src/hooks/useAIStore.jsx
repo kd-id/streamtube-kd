@@ -216,42 +216,56 @@ export function useAIStore() {
   const getEffectiveBase = (prov) => state.baseUrls[prov] || PROVIDER_BASE_URLS[prov] || '';
 
   // ── Fetch Available Models ─────────────────────────────────
-  const fetchAvailableModels = useCallback(async (prov, key, base) => {
-    if (!key) throw new Error('API key required');
+  const fetchAvailableModels = useCallback(async (prov, rawKey, base) => {
+    if (!rawKey) throw new Error('API key required');
     if (prov === 'gemini') {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      return (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => m.name.replace('models/', ''));
+      const keys = Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)));
+      for (let i = 0; i < keys.length; i++) {
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keys[i]}`);
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          return (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => m.name.replace('models/', ''));
+        } catch (e) {
+          if (i === keys.length - 1) throw e;
+        }
+      }
     }
     if (prov === 'anthropic') return [];
     if (prov === 'devin') return ['devin-session'];
     const url = `${(base || PROVIDER_BASE_URLS[prov] || PROVIDER_BASE_URLS.openai).replace(/\/$/, '')}/models`;
-    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${key}` } });
+    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${rawKey.trim()}` } });
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
     return (data.data || []).map(m => m.id).sort();
   }, []);
 
   // ── Test Connection ────────────────────────────────────────
-  const testConnection = useCallback(async (prov, key, base, model, prompt = 'Say OK') => {
-    if (!key) throw new Error('API key required');
+  const testConnection = useCallback(async (prov, rawKey, base, model, prompt = 'Say OK') => {
+    if (!rawKey) throw new Error('API key required');
     const cleanModel = sanitizeModel(model);
     if (prov === 'gemini') {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }) }
-      );
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
+      const keys = Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)));
+      for (let i = 0; i < keys.length; i++) {
+        try {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${keys[i]}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }) }
+          );
+          const data = await res.json();
+          if (data.error) throw new Error(data.error.message);
+          return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
+        } catch (e) {
+          if (i === keys.length - 1) throw e;
+        }
+      }
     }
     if (prov === 'anthropic') {
       const url = `${(base || PROVIDER_BASE_URLS.anthropic).replace(/\/$/, '')}/messages`;
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' },
+        headers: { 'Content-Type': 'application/json', 'x-api-key': rawKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' },
         body: JSON.stringify({ model: cleanModel || 'claude-3-haiku-20240307', max_tokens: MAX_TOKENS.test, messages: [{ role: 'user', content: prompt }] }),
       });
       const data = await res.json();
@@ -261,7 +275,7 @@ export function useAIStore() {
     if (prov === 'custom') {
       if (!base) throw new Error('Base URL required');
       const parsedBody = state.customBodyTemplate.replace(/\{\{PROMPT\}\}/g, prompt).replace(/\{\{MODEL\}\}/g, cleanModel);
-      const res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` }, body: parsedBody });
+      const res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${rawKey.trim()}` }, body: parsedBody });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
       if (state.customResponsePath) { const val = getNestedValue(data, state.customResponsePath); if (val) return String(val).trim(); }
@@ -271,7 +285,7 @@ export function useAIStore() {
     const url = `${(base || PROVIDER_BASE_URLS[prov] || PROVIDER_BASE_URLS.openai).replace(/\/$/, '')}/chat/completions`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${rawKey.trim()}` },
       body: JSON.stringify({ model: cleanModel || 'gpt-4o', messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS.test }),
     });
     const data = await res.json();
@@ -325,8 +339,14 @@ export function useAIStore() {
 
   // ── Try a single provider with model fallbacks ─────────────
   const tryProvider = async (provId, promptText, maxTokens) => {
-    const key = getEffectiveKey(provId);
-    if (!key) return { success: false, reason: 'no_key' };
+    const rawKey = getEffectiveKey(provId);
+    if (!rawKey) return { success: false, reason: 'no_key' };
+
+    const keys = provId === 'gemini' 
+      ? Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)))
+      : [rawKey.trim()];
+
+    if (keys.length === 0) return { success: false, reason: 'no_key' };
 
     const base = getEffectiveBase(provId);
     const activeModel = (provId === state.provider) ? sanitizeModel(state.modelName) : '';
@@ -342,23 +362,29 @@ export function useAIStore() {
       if (defaults[provId]) models.push(defaults[provId]);
     }
 
-    for (let i = 0; i < models.length; i++) {
-      const model = models[i];
-      try {
-        if (i > 0) await new Promise(r => setTimeout(r, 600));
-        const response = await callProviderAPI(provId, model, key, base, promptText, maxTokens);
-        const text = extractText(response);
-        if (text) { console.log(`[AI] ✓ ${provId}/${model} succeeded`); return { success: true, text }; }
-        if (isRetryable(response)) { console.warn(`[AI] ${provId}/${model} rate limited`); continue; }
-        console.warn(`[AI] ${provId}/${model} error: ${response.data?.error?.message || 'unknown'}`);
-        if (i === 0 && models.length === 1) return { success: false, reason: response.data?.error?.message || 'error' };
-        continue;
-      } catch (err) {
-        console.warn(`[AI] ${provId}/${model} threw: ${err.message}`);
-        continue;
+    for (let mIdx = 0; mIdx < models.length; mIdx++) {
+      const model = models[mIdx];
+      for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+        const key = keys[kIdx];
+        try {
+          if (mIdx > 0 || kIdx > 0) await new Promise(r => setTimeout(r, 600));
+          const response = await callProviderAPI(provId, model, key, base, promptText, maxTokens);
+          const text = extractText(response);
+          if (text) { console.log(`[AI] ✓ ${provId}/${model} (Key ${kIdx+1}) succeeded`); return { success: true, text }; }
+          if (isRetryable(response)) { 
+            console.warn(`[AI] ${provId}/${model} (Key ${kIdx+1}) rate limited/failed. Rotating...`); 
+            continue; 
+          }
+          console.warn(`[AI] ${provId}/${model} (Key ${kIdx+1}) error: ${response.data?.error?.message || 'unknown'}`);
+          if (mIdx === models.length - 1 && kIdx === keys.length - 1) return { success: false, reason: response.data?.error?.message || 'error' };
+          break; // Not retryable -> next model
+        } catch (err) {
+          console.warn(`[AI] ${provId}/${model} (Key ${kIdx+1}) threw: ${err.message}`);
+          continue;
+        }
       }
     }
-    return { success: false, reason: 'all_models_failed' };
+    return { success: false, reason: 'all_models_and_keys_failed' };
   };
 
   // ── Main generateText with cross-provider cascade ──────────

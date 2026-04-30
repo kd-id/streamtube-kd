@@ -628,10 +628,14 @@ function AITab() {
   };
 
   const handleFetchModels = async () => {
+    // Auto-save the key and base URL before fetching, so the user doesn't lose it
+    updateConfig({ provider, apiKey: apiKey.trim(), baseUrl: baseUrl.trim() });
+    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
+
     setFetchingModels(true); setFetchMsg('');
     try {
       const effectiveBase = baseUrl || getEffectiveBase(provider);
-      const models = await fetchAvailableModels(provider, apiKey, effectiveBase);
+      const models = await fetchAvailableModels(provider, apiKey.trim(), effectiveBase);
       if (models.length > 0) {
         let updatedModels = [...models];
         let currentActive = modelName;
@@ -654,10 +658,14 @@ function AITab() {
   };
 
   const handleTest = async () => {
+    // Auto-save the key and base URL before testing
+    updateConfig({ provider, apiKey: apiKey.trim(), baseUrl: baseUrl.trim() });
+    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
+
     setTesting(true); setTestResult(null);
     try {
       const effectiveBase = baseUrl || getEffectiveBase(provider);
-      const reply = await testConnection(provider, apiKey, effectiveBase, modelName);
+      const reply = await testConnection(provider, apiKey.trim(), effectiveBase, modelName);
       setTestResult({ ok: true, msg: `Connection successful! Response: "${reply}"` });
     } catch (e) { setTestResult({ ok: false, msg: e.message }); }
     finally { setTesting(false); }
@@ -723,9 +731,12 @@ function AITab() {
 
         {/* API Key */}
         <div className="form-group">
-          <label className="form-label"><Key size={13} /> API Key</label>
+          <label className="form-label">
+            <Key size={13} /> API Key 
+            {provider === 'gemini' && <span style={{fontSize: '10px', marginLeft: '6px', fontWeight: 'normal', color: 'var(--text-muted)'}}>(Pisahkan dengan koma untuk multi-key / rotasi otomatis)</span>}
+          </label>
           <div className="pw-field">
-            <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Enter API key..." />
+            <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={provider === 'gemini' ? 'key1, key2, key3...' : 'Enter API key...'} />
             <button className="pw-eye" onClick={() => setShowKey(!showKey)}>
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
