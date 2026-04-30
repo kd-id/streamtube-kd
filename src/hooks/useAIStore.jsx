@@ -212,10 +212,23 @@ export function useAIStore() {
   };
 
   // ── Delete API Key for a specific provider ─────────────────
-  const deleteApiKey = (provId) => {
+  const deleteApiKey = (provId, singleKey) => {
     const prov = provId || state.provider;
     const newApiKeys = { ...stateRef.current.apiKeys };
-    delete newApiKeys[prov];
+    
+    if (singleKey && newApiKeys[prov]) {
+      // Remove only the specific key from the comma-separated list
+      const keys = newApiKeys[prov].split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
+      const filtered = keys.filter(k => k !== singleKey.trim());
+      if (filtered.length > 0) {
+        newApiKeys[prov] = filtered.join(', ');
+      } else {
+        delete newApiKeys[prov];
+      }
+    } else {
+      delete newApiKeys[prov];
+    }
+    
     const nextState = {
       ...stateRef.current,
       apiKey: '',

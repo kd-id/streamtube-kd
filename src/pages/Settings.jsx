@@ -748,19 +748,55 @@ function AITab() {
             <button className="pw-eye" onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide' : 'Show'}>
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
-            {getEffectiveKey(provider) && (
-              <button className="pw-eye" onClick={handleDeleteKey} title="Hapus API Key" style={{color: '#ef4444'}}>
-                <Trash2 size={14} />
-              </button>
-            )}
           </div>
-          {getEffectiveKey(provider) && (
-            <p style={{fontSize: '10px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px'}}>
-              <CheckCircle size={10} style={{color: 'var(--accent-green)'}}/> 
-              Key tersimpan di server
-              {provider === 'gemini' && (() => { const c = getEffectiveKey(provider).split(/[\n,]+/).map(k => k.trim()).filter(Boolean).length; return c > 1 ? ` (${c} keys)` : ''; })()}
-            </p>
-          )}
+
+          {/* Stored Keys List */}
+          {(() => {
+            const rawKey = getEffectiveKey(provider);
+            if (!rawKey) return null;
+            const keys = rawKey.split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
+            return (
+              <div style={{marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px'}}>
+                <span style={{fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+                  <CheckCircle size={10} style={{color: 'var(--accent-green)'}}/> 
+                  Saved Keys ({keys.length})
+                </span>
+                {keys.map((k, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex', alignItems: 'center', gap: '8px',
+                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '6px', padding: '6px 10px', fontSize: '12px',
+                  }}>
+                    <span style={{
+                      flex: 1, fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-secondary)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {keys.length > 1 && <span style={{color: 'var(--text-muted)', marginRight: '6px', fontWeight: 600}}>#{idx + 1}</span>}
+                      {showKey ? k : `${'•'.repeat(Math.max(0, k.length - 8))}${k.slice(-8)}`}
+                    </span>
+                    <button 
+                      onClick={() => {
+                        if (!confirm(`Hapus key #${idx + 1} (…${k.slice(-8)})?`)) return;
+                        deleteApiKey(provider, k);
+                        // Refresh the local input to match remaining keys
+                        setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
+                      }}
+                      title="Hapus key ini"
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                        color: 'var(--text-muted)', transition: 'color 0.15s',
+                        display: 'flex', alignItems: 'center',
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Custom JSON Templating */}
