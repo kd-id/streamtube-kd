@@ -21,16 +21,23 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     fetch('/api/auth/me', { headers: authHeaders(token) })
-      .then(r => r.json())
-      .then(data => {
-        if (data.user) {
-          setUser(data.user);
-        } else {
+      .then(r => {
+        if (r.status === 401) {
           localStorage.removeItem(TOKEN_KEY);
           setToken(null);
+          return null;
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (data && data.user) {
+          setUser(data.user);
         }
       })
-      .catch(() => { localStorage.removeItem(TOKEN_KEY); setToken(null); })
+      .catch(err => {
+        console.warn('Auth check network error:', err);
+        // Do not remove token on network errors (e.g., rapid refresh)
+      })
       .finally(() => setLoading(false));
   }, [token]);
 
