@@ -224,56 +224,21 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Speetest Section */}
-            {user?.role === 'superadmin' && (
-            <div className="speedtest-container">
-              <div className="speedtest-header">
-                <span className="speedtest-title">Server Speedtest</span>
-                <button 
-                  className={`btn btn-${speedTestRunning ? 'secondary' : 'blue'} btn-sm st-go-btn ${speedTestRunning ? 'running' : ''}`} 
-                  onClick={runSpeedtest} 
-                  disabled={speedTestRunning}
-                >
-                  {speedTestRunning ? 'TESTING' : 'GO'}
-                </button>
-              </div>
-              
-              <div className="speedtest-body">
-                <div className="st-metric">
-                  <span className="st-label"><Activity size={14}/> Ping</span>
-                  <span className="st-value">{speedTestResult ? speedTestResult.ping : '--'}<small>ms</small></span>
-                </div>
-                <div className="st-metric primary">
-                  <span className="st-label"><ArrowDown size={14} color="#2dd4a8"/> Download</span>
-                  <span className="st-value">{speedTestResult ? speedTestResult.download : '--'}<small>Mbps</small></span>
-                </div>
-                <div className="st-metric primary">
-                  <span className="st-label"><ArrowUp size={14} color="#4d8eff"/> Upload</span>
-                  <span className="st-value">{speedTestResult ? speedTestResult.upload : '--'}<small>Mbps</small></span>
-                </div>
-              </div>
+            {/* Stream readiness indicators */}
+            <div className="net-readiness">
+              {[
+                { label: '720p', min: 2.5 },
+                { label: '1080p', min: 4.5 },
+                { label: '1440p', min: 9 },
+                { label: '4K', min: 20 },
+              ].map(r => (
+                <span key={r.label} className={`nr-tag ${net.upload >= r.min ? 'ok' : 'no'}`}>
+                  {net.upload >= r.min ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
+                  {r.label}
+                </span>
+              ))}
             </div>
-            )}
-
-            {/* Mini bandwidth chart */}
-            {netHistory.length > 1 && (
-              <div className="net-mini-chart">
-                <svg viewBox={`0 0 ${netHistory.length * 20} 40`} preserveAspectRatio="none" className="net-spark">
-                  <polyline
-                    fill="none" stroke="#4d8eff" strokeWidth="1.5"
-                    points={netHistory.map((p, i) => `${i * 20},${40 - Math.min(40, p.dl * 2)}`).join(' ')}
-                  />
-                  <polyline
-                    fill="none" stroke="#2dd4a8" strokeWidth="1.5"
-                    points={netHistory.map((p, i) => `${i * 20},${40 - Math.min(40, p.ul * 4)}`).join(' ')}
-                  />
-                </svg>
-                <div className="net-spark-legend">
-                  <span><span className="legend-dot" style={{ background: '#4d8eff' }} /> DL</span>
-                  <span><span className="legend-dot" style={{ background: '#2dd4a8' }} /> UL</span>
-                </div>
-              </div>
-            )}
+          </div>
 
             {/* Stream readiness indicators */}
             <div className="net-readiness">
@@ -423,6 +388,55 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
+
+          {/* Redesigned Speedtest Sidebar (Ookla Mobile Style) */}
+          {user?.role === 'superadmin' && (
+            <div className="glass-card dash-section speedtest-sidebar">
+              <div className="speedtest-header">
+                <span className="speedtest-title">Speedtest</span>
+                <button 
+                  className={`st-go-btn ${speedTestRunning ? 'running' : ''}`} 
+                  onClick={runSpeedtest} 
+                  disabled={speedTestRunning}
+                >
+                  {speedTestRunning ? '...' : 'GO'}
+                </button>
+              </div>
+              
+              <div className="speedtest-gauge-wrap">
+                 <div className="st-gauge-circle">
+                    <div className="st-gauge-value">
+                       <span className="st-main-val">{speedTestResult ? speedTestResult.download : '0.00'}</span>
+                       <span className="st-main-unit">Mbps</span>
+                    </div>
+                    {/* Simulated Gauge Progress */}
+                    <svg className="st-gauge-svg" viewBox="0 0 100 100">
+                      <circle className="st-gauge-bg" cx="50" cy="50" r="45" />
+                      <circle 
+                        className="st-gauge-fill" 
+                        cx="50" cy="50" r="45" 
+                        style={{ strokeDashoffset: speedTestResult ? 283 - (283 * Math.min(100, (speedTestResult.download / 100) * 100)) / 100 : 283 }}
+                      />
+                    </svg>
+                 </div>
+              </div>
+
+              <div className="st-sidebar-metrics">
+                <div className="st-sm-item">
+                  <span className="st-sm-label"><ArrowDown size={12} color="#2dd4a8" /> DOWNLOAD</span>
+                  <span className="st-sm-val">{speedTestResult ? speedTestResult.download : '--'} <small>Mbps</small></span>
+                </div>
+                <div className="st-sm-item">
+                  <span className="st-sm-label"><ArrowUp size={12} color="#4d8eff" /> UPLOAD</span>
+                  <span className="st-sm-val">{speedTestResult ? speedTestResult.upload : '--'} <small>Mbps</small></span>
+                </div>
+                <div className="st-sm-item">
+                  <span className="st-sm-label"><Activity size={12} color="#f59e0b" /> PING</span>
+                  <span className="st-sm-val">{speedTestResult ? speedTestResult.ping : '--'} <small>ms</small></span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

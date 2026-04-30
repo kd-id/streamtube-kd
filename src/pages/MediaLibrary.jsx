@@ -63,12 +63,17 @@ function FileCard({ f, onPreview, onDelete, onCategoryEdit, editingCategory, onC
   const getExt = (name) => name.split('.').pop().toUpperCase();
   const isImage = f.type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(f.name);
 
+  const encPath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
+  const imageUrl = isImage
+    ? (f.url || (f.serverFilename ? `/uploads/${encPath(f.serverFilename)}` : f.objectUrl))
+    : null;
+
   return (
     <div className="glass-card file-card">
       <div
         className={`file-thumb ${f.type}`}
         style={
-          isImage && f.objectUrl ? { backgroundImage: `url("${f.objectUrl}")`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center', backgroundColor: '#000' } :
+          imageUrl ? { backgroundImage: `url("${imageUrl}")`, backgroundSize: 'cover', backgroundPosition: 'center' } :
           thumb ? { backgroundImage: `url("${thumb}")`, backgroundSize: 'cover', backgroundPosition: 'center' } :
           { background: f.type === 'video' ? VIDEO_GRADIENT : isImage ? IMAGE_GRADIENT : MUSIC_GRADIENT }
         }
@@ -255,6 +260,9 @@ export default function MediaLibrary() {
   const usedPercent = totalDisk > 0 ? Math.min(100, (usedDisk / totalDisk) * 100) : 0;
 
   const filtered = files.filter(f => {
+    // Hide internal transcoding files (.tier)
+    if (f.name.toLowerCase().includes('.tier')) return false;
+
     const isImageFile = f.type === 'image' || /\.(jpg|jpeg|png|webp|gif)$/i.test(f.name);
     // If it's an image but wrongly categorized as video (due to old bug), treat its category as image
     const effCat = (f.category === 'video' && isImageFile) ? 'image' : (f.category || f.type);
