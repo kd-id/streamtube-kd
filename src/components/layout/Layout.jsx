@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../../hooks/useAuth';
 import './Layout.css';
 import { AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
