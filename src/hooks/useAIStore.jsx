@@ -242,6 +242,27 @@ export function useAIStore() {
   const getEffectiveKey = (prov) => state.apiKeys[prov] || '';
   const getEffectiveBase = (prov) => state.baseUrls[prov] || PROVIDER_BASE_URLS[prov] || '';
 
+  // ── Add API Keys (append + deduplicate) ───────────────────
+  const addApiKeys = (provId, newKeysRaw) => {
+    const prov = provId || state.provider;
+    const newApiKeys = { ...stateRef.current.apiKeys };
+    const existingKeys = (newApiKeys[prov] || '').split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
+    const incomingKeys = newKeysRaw.split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
+    // Deduplicate: merge and keep unique
+    const merged = Array.from(new Set([...existingKeys, ...incomingKeys]));
+    if (merged.length > 0) {
+      newApiKeys[prov] = merged.join(', ');
+    }
+    const nextState = {
+      ...stateRef.current,
+      apiKey: '',
+      apiKeys: newApiKeys,
+    };
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
+    saveConfig(nextState);
+    return { added: incomingKeys.length, duplicates: incomingKeys.length - (merged.length - existingKeys.length), total: merged.length };
+  };
+
   // ── Fetch Available Models ─────────────────────────────────
   const fetchAvailableModels = useCallback(async (prov, rawKey, base) => {
     if (!rawKey) throw new Error('API key required');
@@ -537,6 +558,7 @@ TAGS: <tag1, tag2, tag3, ..., tag20>`;
     config: state,
     updateConfig,
     deleteApiKey,
+    addApiKeys,
     generateText,
     generateAllMeta,
     fetchAvailableModels,

@@ -535,16 +535,14 @@ const AI_MODELS = {
 };
 
 function AITab() {
-  const { config, updateConfig, deleteApiKey, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels } = useAIStore();
+  const { config, updateConfig, deleteApiKey, addApiKeys, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels } = useAIStore();
   const [provider, setProvider] = useState(config.provider || 'gemini');
   
-  // Load initial key and base for the selected provider
-  const initialKey = getEffectiveKey(config.provider || 'gemini');
+  // API Key input is always empty — it's for ADDING new keys, not editing existing
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
   // Only show user's custom override — the default is shown via placeholder
   const initialBase = config.baseUrls?.[config.provider || 'gemini'] || '';
-
-  const [apiKey, setApiKey] = useState(initialKey);
-  const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
   const [baseUrl, setBaseUrl] = useState(initialBase);
   const [customTemplate, setCustomTemplate] = useState(config.customBodyTemplate || '');
   const [customPath, setCustomPath] = useState(config.customResponsePath || '');
@@ -552,6 +550,7 @@ function AITab() {
   const [saved, setSaved] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [modSearch, setModSearch] = useState('');
+  const [addKeyMsg, setAddKeyMsg] = useState('');
   
   // Initialize model list from persisted providerModels or fallback to AI_MODELS
   const [modelList, setModelList] = useState(config.providerModels?.[config.provider || 'gemini'] || AI_MODELS[config.provider || 'gemini'] || AI_MODELS.gemini);
@@ -563,29 +562,19 @@ function AITab() {
   const activeProvider = AI_PROVIDERS.find(p => p.id === provider) || AI_PROVIDERS[0];
   const filteredModels = modelList.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
   
-  // Compare against stored values — use user override (not built-in default) for baseUrl
-  const storedBaseOverride = config.baseUrls?.[provider] || '';
-  const isDirty = provider !== config.provider || 
-                  apiKey !== getEffectiveKey(provider) || 
-                  modelName !== config.modelName || 
-                  baseUrl !== storedBaseOverride ||
-                  customTemplate !== config.customBodyTemplate ||
-                  customPath !== config.customResponsePath;
+  // Stored keys for the active provider
+  const storedKeys = getEffectiveKey(provider).split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
+  const hasKeys = storedKeys.length > 0;
 
   const handleProviderSelect = (prov) => {
     if (provider === prov.id) return;
     setProvider(prov.id);
+    setApiKeyInput(''); // Always empty on switch
+    setAddKeyMsg('');
     
-    // Get key ONLY for this specific provider — keep empty if not set
-    const provKey = getEffectiveKey(prov.id);
-    setApiKey(provKey); // empty string if not configured
-    
-    // Show only user's custom override, not the built-in default
-    // The default is shown via placeholder on the input
     const userOverride = config.baseUrls?.[prov.id] || '';
     setBaseUrl(userOverride);
     
-    // Load from persisted models if available
     const savedModels = config.providerModels?.[prov.id] || AI_MODELS[prov.id] || [];
     setModelList(savedModels);
     
@@ -597,12 +586,11 @@ function AITab() {
     }
     setModelName(nextModel);
 
-    // Auto-save the provider switch
+    // Auto-save the provider switch (don't touch keys)
     updateConfig({
       provider: prov.id,
-      apiKey: provKey,
-      baseUrl: userOverride, // Only save user override, not the built-in default
       modelName: nextModel,
+      baseUrl: userOverride,
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
     });
@@ -611,36 +599,47 @@ function AITab() {
     setTestResult(null);
   };
 
+  // Add key(s) from input → append to stored keys
+  const handleAddKey = () => {
+    const raw = apiKeyInput.trim();
+    if (!raw) return;
+    const result = addApiKeys(provider, raw);
+    setApiKeyInput('');
+    if (result.duplicates > 0) {
+      setAddKeyMsg(`✓ ${result.total} key(s) total. ${result.duplicates} duplikat di-skip.`);
+    } else {
+      setAddKeyMsg(`✓ Key ditambahkan. Total: ${result.total}`);
+    }
+    setTimeout(() => setAddKeyMsg(''), 3000);
+  };
+
   const handleModelSelect = (m) => {
     setModelName(m);
     updateConfig({ 
       provider, 
-      apiKey: apiKey.trim(), 
       modelName: m, 
       baseUrl: baseUrl.trim(),
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
     });
-    // Re-sync apiKey display from stored keys (updateConfig clears the transient apiKey)
-    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const handleFetchModels = async () => {
-    // Auto-save the key and base URL before fetching, so the user doesn't lose it
-    updateConfig({ provider, apiKey: apiKey.trim(), baseUrl: baseUrl.trim() });
-    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
+    // Save baseUrl before fetching
+    updateConfig({ provider, baseUrl: baseUrl.trim() });
+    const effectiveKey = getEffectiveKey(provider);
+    if (!effectiveKey) { setFetchMsg('⚠ Tambahkan API key terlebih dahulu'); return; }
 
     setFetchingModels(true); setFetchMsg('');
     try {
       const effectiveBase = baseUrl || getEffectiveBase(provider);
-      const models = await fetchAvailableModels(provider, apiKey.trim(), effectiveBase);
+      const models = await fetchAvailableModels(provider, effectiveKey, effectiveBase);
       if (models.length > 0) {
         let updatedModels = [...models];
         let currentActive = modelName;
         
-        // Ensure the currently selected model is not lost and doesn't get reset
         if (currentActive && !updatedModels.includes(currentActive)) {
           updatedModels.unshift(currentActive);
         } else if (!currentActive) {
@@ -649,7 +648,7 @@ function AITab() {
         
         setModelList(updatedModels);
         setModelName(currentActive);
-        saveProviderModels(provider, updatedModels); // Persist globally!
+        saveProviderModels(provider, updatedModels);
         
         setFetchMsg(`✓ ${models.length} models found`);
       } else { setFetchMsg('No models found.'); }
@@ -658,38 +657,26 @@ function AITab() {
   };
 
   const handleTest = async () => {
-    // Auto-save the key and base URL before testing
-    updateConfig({ provider, apiKey: apiKey.trim(), baseUrl: baseUrl.trim() });
-    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
+    const effectiveKey = getEffectiveKey(provider);
+    if (!effectiveKey) { setTestResult({ ok: false, msg: 'Tambahkan API key terlebih dahulu' }); return; }
 
     setTesting(true); setTestResult(null);
     try {
       const effectiveBase = baseUrl || getEffectiveBase(provider);
-      const reply = await testConnection(provider, apiKey.trim(), effectiveBase, modelName);
+      const reply = await testConnection(provider, effectiveKey, effectiveBase, modelName);
       setTestResult({ ok: true, msg: reply });
     } catch (e) { setTestResult({ ok: false, msg: e.message }); }
     finally { setTesting(false); }
   };
 
-  const handleDeleteKey = () => {
-    if (!confirm(`Hapus API Key untuk provider ${activeProvider.name}?`)) return;
-    deleteApiKey(provider);
-    setApiKey('');
-    setTestResult(null);
-    setFetchMsg('');
-  };
-
   const handleSave = () => {
     updateConfig({ 
       provider, 
-      apiKey: apiKey.trim(), 
       modelName: modelName.trim(), 
       baseUrl: baseUrl.trim(),
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
     });
-    // Re-sync apiKey display from stored keys (updateConfig clears the transient apiKey)
-    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -737,66 +724,78 @@ function AITab() {
           </div>
         )}
 
-        {/* API Key */}
+        {/* API Key — Add new key(s) */}
         <div className="form-group">
           <label className="form-label">
-            <Key size={13} /> API Key 
-            {provider === 'gemini' && <span style={{fontSize: '10px', marginLeft: '6px', fontWeight: 'normal', color: 'var(--text-muted)'}}>(Pisahkan dengan koma untuk multi-key / rotasi otomatis)</span>}
+            <Key size={13} /> Add API Key
+            {provider === 'gemini' && <span style={{fontSize: '10px', marginLeft: '6px', fontWeight: 'normal', color: 'var(--text-muted)'}}>(bisa satu per satu atau banyak sekaligus)</span>}
           </label>
           <div className="pw-field">
-            <input className="form-input" type={showKey ? 'text' : 'password'} value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={provider === 'gemini' ? 'key1, key2, key3...' : 'Enter API key...'} />
+            <input 
+              className="form-input" 
+              type={showKey ? 'text' : 'password'} 
+              value={apiKeyInput} 
+              onChange={e => setApiKeyInput(e.target.value)} 
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddKey(); } }}
+              placeholder={provider === 'gemini' ? 'Paste key baru...' : 'Paste API key...'} 
+            />
             <button className="pw-eye" onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide' : 'Show'}>
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
+            <button 
+              className="pw-eye" 
+              onClick={handleAddKey} 
+              disabled={!apiKeyInput.trim()}
+              title="Tambah key"
+              style={{color: apiKeyInput.trim() ? 'var(--accent-green)' : 'var(--text-muted)'}}
+            >
+              <Plus size={14} />
+            </button>
           </div>
+          {addKeyMsg && (
+            <p style={{fontSize: '10px', color: 'var(--accent-green)', marginTop: '4px'}}>{addKeyMsg}</p>
+          )}
 
           {/* Stored Keys List */}
-          {(() => {
-            const rawKey = getEffectiveKey(provider);
-            if (!rawKey) return null;
-            const keys = rawKey.split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
-            return (
-              <div style={{marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px'}}>
-                <span style={{fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px'}}>
-                  <CheckCircle size={10} style={{color: 'var(--accent-green)'}}/> 
-                  Saved Keys ({keys.length})
-                </span>
-                {keys.map((k, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex', alignItems: 'center', gap: '8px',
-                    background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '6px', padding: '6px 10px', fontSize: '12px',
+          {hasKeys && (
+            <div style={{marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px'}}>
+              <span style={{fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px'}}>
+                <CheckCircle size={10} style={{color: 'var(--accent-green)'}}/> 
+                Saved Keys ({storedKeys.length})
+              </span>
+              {storedKeys.map((k, idx) => (
+                <div key={idx} style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '6px', padding: '6px 10px', fontSize: '12px',
+                }}>
+                  <span style={{
+                    flex: 1, fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-secondary)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
-                    <span style={{
-                      flex: 1, fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-secondary)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {keys.length > 1 && <span style={{color: 'var(--text-muted)', marginRight: '6px', fontWeight: 600}}>#{idx + 1}</span>}
-                      {showKey ? k : `${'•'.repeat(Math.max(0, k.length - 8))}${k.slice(-8)}`}
-                    </span>
-                    <button 
-                      onClick={() => {
-                        if (!confirm(`Hapus key #${idx + 1} (…${k.slice(-8)})?`)) return;
-                        deleteApiKey(provider, k);
-                        // Refresh the local input to match remaining keys
-                        setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
-                      }}
-                      title="Hapus key ini"
-                      style={{
-                        background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                        color: 'var(--text-muted)', transition: 'color 0.15s',
-                        display: 'flex', alignItems: 'center',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-                      onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            );
-          })()}
+                    {storedKeys.length > 1 && <span style={{color: 'var(--text-muted)', marginRight: '6px', fontWeight: 600}}>#{idx + 1}</span>}
+                    {showKey ? k : `${'•'.repeat(Math.max(0, k.length - 8))}${k.slice(-8)}`}
+                  </span>
+                  <button 
+                    onClick={() => {
+                      if (!confirm(`Hapus key ${storedKeys.length > 1 ? `#${idx + 1} ` : ''}(…${k.slice(-8)})?`)) return;
+                      deleteApiKey(provider, k);
+                    }}
+                    title="Hapus key ini"
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
+                      color: 'var(--text-muted)', transition: 'color 0.15s',
+                      display: 'flex', alignItems: 'center',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Custom JSON Templating */}
@@ -827,7 +826,7 @@ function AITab() {
           </>
         )}
 
-        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave} disabled={!isDirty && !saved}>
+        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave}>
           {saved ? <><Check size={14} /> Saved!</> : <><Save size={14} /> Save Configuration</>}
         </button>
       </div>
@@ -844,7 +843,7 @@ function AITab() {
           <div className="ai-model-label-row">
             <label className="form-label" style={{ margin: 0 }}><BrainCircuit size={13} /> Model</label>
             {provider !== 'custom' && provider !== 'devin' && (
-              <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !apiKey} title="Fetch latest models from API">
+              <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !hasKeys} title="Fetch latest models from API">
                 <RefreshCw size={12} className={fetchingModels ? 'spin' : ''} />
                 {fetchingModels ? 'Fetching...' : 'Update List'}
               </button>
@@ -901,7 +900,7 @@ function AITab() {
           <button
             className="ai-test-btn"
             onClick={handleTest}
-            disabled={testing || !apiKey || !modelName}
+            disabled={testing || !hasKeys || !modelName}
           >
             {testing
               ? <><RefreshCw size={14} className="spin" /> Testing connection...</>
