@@ -240,22 +240,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-            {/* Stream readiness indicators */}
-            <div className="net-readiness">
-              {[
-                { label: '720p', min: 2.5 },
-                { label: '1080p', min: 4.5 },
-                { label: '1440p', min: 9 },
-                { label: '4K', min: 20 },
-              ].map(r => (
-                <span key={r.label} className={`nr-tag ${net.upload >= r.min ? 'ok' : 'no'}`}>
-                  {net.upload >= r.min ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
-                  {r.label}
-                </span>
-              ))}
-            </div>
-          </div>
-
           {/* VPS Specs Notification (Auto Detect) */}
           {user?.role === 'superadmin' && (
           <div className="glass-card dash-section" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
