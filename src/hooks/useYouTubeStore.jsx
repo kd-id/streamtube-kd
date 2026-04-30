@@ -96,15 +96,44 @@ export function YouTubeProvider({ children }) {
   const handleYouTubeCallback = useCallback(async (code) => {
     setConnecting(true);
     try {
+      // After OAuth redirect, credentials may not be loaded yet (race condition).
+      // Fetch them directly from the API as fallback.
+      let cId = credentials.clientId;
+      let cSecret = credentials.clientSecret;
+      let rUri = credentials.redirectUri;
+
+      if (!cId || !cSecret) {
+        const token = getToken();
+        if (token) {
+          try {
+            const credRes = await fetch('/api/settings/yt_credentials', { headers: { Authorization: `Bearer ${token}` } });
+            const credData = await credRes.json();
+            if (credData.success && credData.data) {
+              cId = credData.data.clientId || cId;
+              cSecret = credData.data.clientSecret || cSecret;
+              // Also update state for future use
+              setCredentials(prev => ({ ...prev, clientId: cId, clientSecret: cSecret }));
+            }
+          } catch (e) {
+            console.warn('Failed to load credentials from API:', e);
+          }
+        }
+      }
+
+      if (!cId || !cSecret) {
+        setConnecting(false);
+        throw new Error('YouTube API credentials not found. Please save your Client ID and Client Secret in Settings > Integration first.');
+      }
+
       // Exchange code for token via server-side endpoint
       const response = await fetch('/api/youtube/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
-          clientId: credentials.clientId,
-          clientSecret: credentials.clientSecret,
-          redirectUri: credentials.redirectUri,
+          clientId: cId,
+          clientSecret: cSecret,
+          redirectUri: rUri,
         }),
       });
 

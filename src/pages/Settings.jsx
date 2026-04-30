@@ -563,10 +563,12 @@ function AITab() {
   const activeProvider = AI_PROVIDERS.find(p => p.id === provider) || AI_PROVIDERS[0];
   const filteredModels = modelList.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
   
+  // Compare against stored values — use user override (not built-in default) for baseUrl
+  const storedBaseOverride = config.baseUrls?.[provider] || '';
   const isDirty = provider !== config.provider || 
-                  apiKey !== getEffectiveKey(config.provider) || 
+                  apiKey !== getEffectiveKey(provider) || 
                   modelName !== config.modelName || 
-                  baseUrl !== getEffectiveBase(config.provider) ||
+                  baseUrl !== storedBaseOverride ||
                   customTemplate !== config.customBodyTemplate ||
                   customPath !== config.customResponsePath;
 
@@ -619,6 +621,8 @@ function AITab() {
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
     });
+    // Re-sync apiKey display from stored keys (updateConfig clears the transient apiKey)
+    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -668,6 +672,8 @@ function AITab() {
       customBodyTemplate: customTemplate,
       customResponsePath: customPath.trim()
     });
+    // Re-sync apiKey display from stored keys (updateConfig clears the transient apiKey)
+    setTimeout(() => setApiKey(getEffectiveKey(provider)), 50);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
