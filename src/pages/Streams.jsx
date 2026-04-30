@@ -996,7 +996,9 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
       const formData = new FormData();
       formData.append('file', file);
       try {
-        const upRes = await fetch('/api/upload', { method: 'POST', body: formData });
+        const token = localStorage.getItem('streamtube_token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const upRes = await fetch('/api/upload', { method: 'POST', headers, body: formData });
         const upData = await upRes.json();
         if (upData.success && upData.file) {
           setThumbnailServerUrl(upData.file.url);

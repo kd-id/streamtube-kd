@@ -47,9 +47,14 @@ export const streamApi = {
     const formData = new FormData();
     formData.append('file', file);
 
+    const token = localStorage.getItem('streamtube_token');
+
     const xhr = new XMLHttpRequest();
     return new Promise((resolve, reject) => {
       xhr.open('POST', `${API_BASE}/upload`);
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) {

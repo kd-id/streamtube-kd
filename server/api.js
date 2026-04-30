@@ -789,6 +789,50 @@ export const apiMiddleware = async (req, res, next) => {
             const db = getDb();
             
             if (req.method === 'GET') {
+              if (entity === 'media_files') {
+                try {
+                  const files = fs.readdirSync(UPLOAD_DIR);
+                  const prefix = `${userId}_`;
+                  const userFiles = files.filter(f => f.startsWith(prefix));
+                  
+                  userFiles.forEach(f => {
+                    const exists = db.prepare('SELECT id FROM media_files WHERE user_id = ? AND data LIKE ?').get(userId, `%"serverFilename":"${f}"%`);
+                    if (!exists) {
+                      const fullPath = path.join(UPLOAD_DIR, f);
+                      try {
+                        const stat = fs.statSync(fullPath);
+                        let type = 'video';
+                        const ext = path.extname(f).toLowerCase();
+                        if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) type = 'image';
+                        else if (['.mp3', '.wav', '.m4a', '.aac'].includes(ext)) type = 'audio';
+
+                        const parts = f.split('_');
+                        const origName = parts.length >= 3 ? parts.slice(2).join('_') : f;
+                        
+                        const newMedia = {
+                          id: `media_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+                          name: origName,
+                          type,
+                          duration: '0:00',
+                          size: stat.size,
+                          serverPath: fullPath,
+                          serverFilename: f,
+                          url: `/uploads/${f}`,
+                          category: 'Uncategorized',
+                          createdAt: stat.birthtime.toISOString()
+                        };
+                        
+                        db.prepare(`INSERT INTO media_files (id, user_id, data) VALUES (?, ?, ?)`).run(newMedia.id, userId, JSON.stringify(newMedia));
+                      } catch (err) {
+                        console.error('[Sync] Error recovering file:', err);
+                      }
+                    }
+                  });
+                } catch (e) {
+                  console.error('[Sync] Failed to read UPLOAD_DIR:', e);
+                }
+              }
+
               const rows = db.prepare(`SELECT id, data FROM ${entity} WHERE user_id = ?`).all(userId);
               const data = rows.map(r => JSON.parse(r.data));
               return sendJSON(res, 200, { success: true, data });
@@ -1098,13 +1142,18 @@ export const apiMiddleware = async (req, res, next) => {
         // ── Upload file ──
         if (url === '/api/upload' && req.method === 'POST') {
           try {
+            const auth = req.headers.authorization;
+            if (!auth || !auth.startsWith('Bearer ')) return sendJSON(res, 401, { error: 'Not authenticated' });
+            let userId;
+            try { userId = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
+
             const { filename: origName, mimetype, data } = await parseMultipart(req);
             const allowed = /video\/|audio\/|image\//;
             if (!allowed.test(mimetype)) {
               return sendJSON(res, 400, { error: 'Only video, audio, and image files are allowed' });
             }
             const safeName = origName.replace(/[^a-zA-Z0-9._-]/g, '_');
-            const finalName = `${Date.now()}_${safeName}`;
+            const finalName = `${userId}_${Date.now()}_${safeName}`;
             const filePath = path.join(UPLOAD_DIR, finalName);
             fs.writeFileSync(filePath, data);
             return sendJSON(res, 200, {
