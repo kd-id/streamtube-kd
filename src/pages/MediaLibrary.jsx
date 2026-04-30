@@ -302,21 +302,9 @@ export default function MediaLibrary() {
           });
         } else {
           errors[i] = result?.error || 'Upload gagal';
-          newEntries.push({
-            id: Date.now() + i + Math.floor(Math.random() * 100),
-            name: uf.name, type: uf.type, category: activeCategory !== 'all' ? activeCategory : (uf.type === 'music' ? 'music' : uf.type),
-            size: uf.size, duration: uf.duration || null, date: new Date().toISOString(),
-            status: 'ready', objectUrl: uf.objectUrl,
-          });
         }
       } catch (err) {
         errors[i] = err.message || 'Server tidak terhubung';
-        newEntries.push({
-          id: Date.now() + i + Math.floor(Math.random() * 100),
-          name: uf.name, type: uf.type, category: activeCategory !== 'all' ? activeCategory : (uf.type === 'music' ? 'music' : uf.type),
-          size: uf.size, duration: uf.duration || null, date: new Date().toISOString(),
-          status: 'ready', objectUrl: uf.objectUrl,
-        });
         setUploadProgress(prev => ({ ...prev, [i]: 100 }));
       }
     }

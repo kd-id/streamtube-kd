@@ -607,6 +607,9 @@ export default function Streams() {
                             </span>
                             <span className="st-meta" style={{ display: 'flex', gap: '8px', alignItems: 'center', opacity: 0.8, marginTop: '2px' }}>
                               <span>Dibuat: {s.createdAt ? new Date(s.createdAt).toLocaleDateString('id-ID', {day:'numeric',month:'short',year:'numeric'}) : '--'}</span>
+                              <span style={{ color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', background: 'rgba(45, 212, 168, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                                <CheckCircle2 size={10} /> Server
+                              </span>
                             </span>
                             {s.scheduleChecked && s.scheduleTime && (
                               <span className="st-meta" style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>

@@ -629,9 +629,9 @@ export const apiMiddleware = async (req, res, next) => {
 
         // ── Serve uploaded files ──
         if (url.startsWith('/uploads/')) {
-          const filename = decodeURIComponent(url.slice('/uploads/'.length));
-          const filePath = path.join(UPLOAD_DIR, filename);
-          if (fs.existsSync(filePath)) {
+          const relativePath = decodeURIComponent(url.slice('/uploads/'.length)).replace(/\.\./g, '');
+          const filePath = path.join(UPLOAD_DIR, relativePath);
+          if (fs.existsSync(filePath) && !fs.statSync(filePath).isDirectory()) {
             const ext = path.extname(filePath).toLowerCase();
             const mimeMap = {
               '.mp4': 'video/mp4', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
@@ -798,11 +798,30 @@ export const apiMiddleware = async (req, res, next) => {
             if (req.method === 'GET') {
               if (entity === 'media_files') {
                 try {
-                  const files = fs.readdirSync(UPLOAD_DIR);
-                  const prefix = `${userId}_`;
-                  const userFiles = files.filter(f => f.startsWith(prefix));
+                  const scanDir = (dir, prefix = '') => {
+                    let results = [];
+                    const list = fs.readdirSync(dir);
+                    list.forEach(file => {
+                      const fullPath = path.join(dir, file);
+                      const stat = fs.statSync(fullPath);
+                      if (stat.isDirectory()) {
+                        // Skip .thumbnails and merged directories for auto-sync
+                        if (file !== '.thumbnails' && file !== 'merged') {
+                          results = results.concat(scanDir(fullPath, path.join(prefix, file)));
+                        }
+                      } else {
+                        results.push(path.join(prefix, file));
+                      }
+                    });
+                    return results;
+                  };
+                  
+                  const files = scanDir(UPLOAD_DIR);
+                  const userPrefix = `${userId}_`;
+                  const userFiles = files.filter(f => path.basename(f).startsWith(userPrefix));
                   
                   userFiles.forEach(f => {
+                    // f is the relative path like 'images/123_abc.jpg'
                     const exists = db.prepare('SELECT id FROM media_files WHERE user_id = ? AND data LIKE ?').get(userId, `%"serverFilename":"${f}"%`);
                     if (!exists) {
                       const fullPath = path.join(UPLOAD_DIR, f);
@@ -813,8 +832,9 @@ export const apiMiddleware = async (req, res, next) => {
                         if (['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext)) type = 'image';
                         else if (['.mp3', '.wav', '.m4a', '.aac'].includes(ext)) type = 'audio';
 
-                        const parts = f.split('_');
-                        const origName = parts.length >= 3 ? parts.slice(2).join('_') : f;
+                        const basename = path.basename(f);
+                        const parts = basename.split('_');
+                        const origName = parts.length >= 3 ? parts.slice(2).join('_') : basename;
                         
                         const newMedia = {
                           id: `media_${Date.now()}_${Math.random().toString(36).substring(7)}`,
@@ -824,7 +844,7 @@ export const apiMiddleware = async (req, res, next) => {
                           size: stat.size,
                           serverPath: fullPath,
                           serverFilename: f,
-                          url: `/uploads/${f}`,
+                          url: `/uploads/${f.replace(/\\/g, '/')}`,
                           category: 'Uncategorized',
                           createdAt: stat.birthtime.toISOString()
                         };
@@ -1159,19 +1179,30 @@ export const apiMiddleware = async (req, res, next) => {
             if (!allowed.test(mimetype)) {
               return sendJSON(res, 400, { error: 'Only video, audio, and image files are allowed' });
             }
+
+            let category = 'others';
+            if (mimetype.startsWith('image/')) category = 'images';
+            else if (mimetype.startsWith('video/')) category = 'videos';
+            else if (mimetype.startsWith('audio/')) category = 'audio';
+
+            const categoryDir = path.join(UPLOAD_DIR, category);
+            if (!fs.existsSync(categoryDir)) fs.mkdirSync(categoryDir, { recursive: true });
+
             const safeName = origName.replace(/[^a-zA-Z0-9._-]/g, '_');
             const finalName = `${userId}_${Date.now()}_${safeName}`;
-            const filePath = path.join(UPLOAD_DIR, finalName);
+            const filePath = path.join(categoryDir, finalName);
+            const relativePath = `${category}/${finalName}`;
+            
             fs.writeFileSync(filePath, data);
             return sendJSON(res, 200, {
               success: true,
               file: {
-                filename: finalName,
+                filename: relativePath, // Use relative path as filename identifier
                 originalname: origName,
                 size: data.length,
                 mimetype,
                 path: filePath,
-                url: `/uploads/${finalName}`,
+                url: `/uploads/${relativePath}`,
               },
             });
           } catch (err) {
@@ -1195,8 +1226,8 @@ export const apiMiddleware = async (req, res, next) => {
 
         // ── Video Thumbnail ──
         if (url.startsWith('/api/video/thumbnail/') && req.method === 'GET') {
-          const filename = decodeURIComponent(getPathParam(url, '/api/video/thumbnail/'));
-          const filePath = path.join(UPLOAD_DIR, filename);
+          const relativePath = decodeURIComponent(getPathParam(url, '/api/video/thumbnail/')).replace(/\.\./g, '');
+          const filePath = path.join(UPLOAD_DIR, relativePath);
           const ext = path.extname(filePath).toLowerCase();
           
           if (!fs.existsSync(filePath)) {
@@ -1217,6 +1248,7 @@ export const apiMiddleware = async (req, res, next) => {
              return res.end('Audio has no thumbnail');
           }
 
+          const filename = path.basename(filePath);
           const thumbDir = path.join(UPLOAD_DIR, '.thumbnails');
           if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
           
@@ -1249,9 +1281,9 @@ export const apiMiddleware = async (req, res, next) => {
 
         // ── Delete file ──
         if (url.startsWith('/api/files/') && req.method === 'DELETE') {
-          const filename = decodeURIComponent(getPathParam(url, '/api/files/'));
-          const filePath = path.join(UPLOAD_DIR, filename);
-          if (fs.existsSync(filePath)) {
+          const relativePath = decodeURIComponent(getPathParam(url, '/api/files/')).replace(/\.\./g, '');
+          const filePath = path.join(UPLOAD_DIR, relativePath);
+          if (fs.existsSync(filePath) && !fs.statSync(filePath).isDirectory()) {
             fs.unlinkSync(filePath);
             return sendJSON(res, 200, { success: true });
           }
