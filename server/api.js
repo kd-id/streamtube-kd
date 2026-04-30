@@ -1269,33 +1269,71 @@ export const apiMiddleware = async (req, res, next) => {
           });
         }
 
-        // ── Speedtest ──
-        if (url === '/api/system/speedtest' && req.method === 'GET') {
-          try {
-            const t0 = Date.now();
-            const dlRes = await fetch('http://ipv4.download.thinkbroadband.com/5MB.zip', { signal: AbortSignal.timeout(4000) });
-            const dlBlob = await dlRes.arrayBuffer();
-            const t1 = Date.now();
-            const dlTime = (t1 - t0) / 1000;
-            const mbps = (dlBlob.byteLength * 8 / 1000000) / (dlTime || 1);
-            
+        // ── Speedtest: Real Download (server → client) ──
+        if (url.startsWith('/api/speedtest/download') && req.method === 'GET') {
+          const sizeParam = new URL(url, 'http://localhost').searchParams.get('size');
+          const sizeMB = Math.min(Math.max(parseInt(sizeParam) || 10, 1), 100); // 1-100 MB
+          const totalBytes = sizeMB * 1024 * 1024;
+          const chunkSize = 256 * 1024; // 256KB chunks for max throughput
+          
+          res.writeHead(200, {
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': totalBytes,
+            'Cache-Control': 'no-store',
+            'X-Start-Time': Date.now().toString(),
+          });
+          
+          // Stream random-ish data in chunks (much faster than crypto.randomBytes per chunk)
+          const chunk = Buffer.alloc(chunkSize, 0x42); // Fill with 'B' — fast, no crypto overhead
+          let sent = 0;
+          const write = () => {
+            let ok = true;
+            while (sent < totalBytes && ok) {
+              const remaining = totalBytes - sent;
+              const toSend = remaining < chunkSize ? chunk.slice(0, remaining) : chunk;
+              ok = res.write(toSend);
+              sent += toSend.length;
+            }
+            if (sent >= totalBytes) {
+              res.end();
+            } else {
+              res.once('drain', write);
+            }
+          };
+          write();
+          return;
+        }
+
+        // ── Speedtest: Real Upload (client → server) ──
+        if (url === '/api/speedtest/upload' && req.method === 'POST') {
+          const startTime = Date.now();
+          let totalBytes = 0;
+          
+          req.on('data', (chunk) => {
+            totalBytes += chunk.length;
+            // Discard data — we only measure throughput
+          });
+          
+          req.on('end', () => {
+            const elapsed = (Date.now() - startTime) / 1000;
+            const mbps = elapsed > 0 ? (totalBytes * 8 / 1000000) / elapsed : 0;
             return sendJSON(res, 200, {
               success: true,
-              download: mbps.toFixed(2),
-              upload: (mbps * 0.4).toFixed(2), 
-              ping: Math.round((t1 - t0)/20) + 5, 
-              server: 'ThinkBroadband Public Mirror'
+              bytes: totalBytes,
+              elapsed: elapsed.toFixed(3),
+              mbps: mbps.toFixed(2),
             });
-          } catch(err) {
-            // Jika Network VPS memblokir port download/keluar atau masalah sertifikat, gunakan fallback
-            return sendJSON(res, 200, {
-              success: true,
-              download: (Math.random() * 80 + 100).toFixed(2), 
-              upload: (Math.random() * 40 + 70).toFixed(2), 
-              ping: Math.floor(Math.random() * 20) + 5, 
-              server: 'VPS Fallback Testing'
-            });
-          }
+          });
+          
+          req.on('error', (err) => {
+            return sendJSON(res, 500, { error: err.message });
+          });
+          return;
+        }
+
+        // ── Speedtest: Ping (RTT measurement) ──
+        if (url === '/api/speedtest/ping' && req.method === 'GET') {
+          return sendJSON(res, 200, { pong: Date.now() });
         }
 
         // ── Upload file (streaming to disk for max speed) ──

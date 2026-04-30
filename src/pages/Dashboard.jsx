@@ -105,16 +105,53 @@ export default function Dashboard() {
 
   const runSpeedtest = async () => {
     setSpeedTestRunning(true);
+    setSpeedTestResult({ download: '...', upload: '...', ping: '...', server: 'Direct to VPS' });
+    
     try {
-      const res = await fetch('/api/system/speedtest');
-      const data = await res.json();
-      if (data.success) {
-        setSpeedTestResult(data);
-      } else {
-        alert('Speedtest error: ' + data.error);
+      // 1. Ping Test (Average of 3)
+      let pingTotal = 0;
+      for (let i = 0; i < 3; i++) {
+        const p0 = Date.now();
+        await fetch('/api/speedtest/ping', { cache: 'no-store' });
+        pingTotal += (Date.now() - p0);
       }
+      const pingAvg = Math.round(pingTotal / 3);
+      setSpeedTestResult(prev => ({ ...prev, ping: pingAvg }));
+
+      // 2. Download Test (10MB)
+      const dlSizeMB = 10;
+      const d0 = Date.now();
+      const dlRes = await fetch(`/api/speedtest/download?size=${dlSizeMB}`, { cache: 'no-store' });
+      const dlBlob = await dlRes.blob();
+      const d1 = Date.now();
+      const dlElapsed = (d1 - d0) / 1000;
+      const dlMbps = ((dlBlob.size * 8) / 1000000) / (dlElapsed || 1);
+      setSpeedTestResult(prev => ({ ...prev, download: dlMbps.toFixed(2) }));
+
+      // 3. Upload Test (5MB)
+      const ulSizeMB = 5;
+      const ulBytes = ulSizeMB * 1024 * 1024;
+      // Generate random array for upload (Uint8Array)
+      const ulData = new Uint8Array(ulBytes);
+      for (let i = 0; i < ulBytes; i += 65536) {
+        ulData.fill(Math.floor(Math.random() * 256), i, Math.min(i + 65536, ulBytes));
+      }
+      
+      const u0 = Date.now();
+      await fetch('/api/speedtest/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: ulData
+      });
+      const u1 = Date.now();
+      const ulElapsed = (u1 - u0) / 1000;
+      const ulMbps = ((ulBytes * 8) / 1000000) / (ulElapsed || 1);
+      
+      setSpeedTestResult(prev => ({ ...prev, upload: ulMbps.toFixed(2), success: true }));
+
     } catch(err) {
       alert('Failed to run speedtest: ' + err.message);
+      setSpeedTestResult(null);
     } finally {
       setSpeedTestRunning(false);
     }
