@@ -4,7 +4,8 @@ import {
   Wifi, Gauge, MonitorPlay, AlertTriangle, Users, ExternalLink,
   Image as ImageIcon, Clock, DollarSign, Tag, ChevronDown, Film,
   Music, ListMusic, Terminal, Link2, Key, Copy, Check, RefreshCw, RotateCcw,
-  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2, Sparkles, Zap
+  Smartphone, Monitor, Info, CheckCircle, XCircle, Share2, Upload, LayoutGrid, Bot, Wand2, Sparkles, Zap,
+  Globe, Lock, Calendar
 } from 'lucide-react';
 import Modal from '../components/shared/Modal';
 import ShareModal from '../components/ShareModal';
@@ -565,11 +566,12 @@ export default function Streams() {
               <thead>
                 <tr>
                   <th>STREAM NAME</th>
+                  <th>PRIVACY</th>
+                  <th>STATUS</th>
                   <th>CHANNEL</th>
                   <th>DASHBOARD</th>
                   <th>PLATFORM</th>
                   <th>SHARE</th>
-                  <th>STATUS</th>
                   <th>ACTIONS</th>
                 </tr>
               </thead>
@@ -615,6 +617,24 @@ export default function Streams() {
                         </div>
                       </td>
                       <td>
+                        <div className="st-privacy" title={s.privacy || 'unlisted'} style={{ opacity: 0.7, display: 'flex', justifyContent: 'center' }}>
+                          {s.privacy === 'public' ? <Globe size={15} /> : s.privacy === 'private' ? <Lock size={15} /> : <Link2 size={15} />}
+                        </div>
+                      </td>
+                      <td>
+                        <div className={`st-status ${s.status}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span className={`status-dot ${s.status}`} />
+                            {s.status === 'live' ? 'Live' : s.status === 'starting' ? 'Starting...' : 'Offline'}
+                          </div>
+                          {s.status === 'live' && (
+                             <span style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9, paddingLeft: '12px' }}>
+                               {formatTime(s.elapsedSeconds || 0)}
+                             </span>
+                          )}
+                        </div>
+                      </td>
+                      <td>
                         {ch ? (
                           <div className="st-channel">
                             {ch.avatarUrl ? (
@@ -643,19 +663,6 @@ export default function Streams() {
                         <button className="icon-action-btn" onClick={() => handleCopyShare(s)} title="Share Stream">
                           <Share2 size={14} />
                         </button>
-                      </td>
-                      <td>
-                        <div className={`st-status ${s.status}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span className={`status-dot ${s.status}`} />
-                            {s.status === 'live' ? 'Live' : s.status === 'starting' ? 'Starting...' : 'Offline'}
-                          </div>
-                          {s.status === 'live' && (
-                             <span style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9, paddingLeft: '12px' }}>
-                               {formatTime(s.elapsedSeconds || 0)}
-                             </span>
-                          )}
-                        </div>
                       </td>
                       <td>
                         <div className="st-actions">
@@ -711,11 +718,12 @@ function CreateStreamModal({ isOpen, onClose, editId }) {
   const [tab, setTab] = useState('manual');
   
   const [formModes, setFormModes] = useState({
-    manual: { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '' },
-    api:    { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '' }
+    manual: { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '', autoStart: false, autoStop: false, dvr: true, video360: false, delay: 'none', closedCaptions: false, unlistReplay: false },
+    api:    { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '', autoStart: false, autoStop: false, dvr: true, video360: false, delay: 'none', closedCaptions: false, unlistReplay: false }
   });
 
-  const { title, description, privacy, category, tags, tagInput } = formModes[tab];
+  const { title, description, privacy, category, tags, tagInput, autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay } = formModes[tab];
+  const [showAdditional, setShowAdditional] = useState(false);
 
   const updateForm = (field, value) => {
     setFormModes(prev => ({ ...prev, [tab]: { ...prev[tab], [field]: value } }));
@@ -967,8 +975,8 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
   const resetForm = () => {
     setTab('manual'); 
     setFormModes({
-      manual: { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '' },
-      api:    { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '' }
+      manual: { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '', autoStart: false, autoStop: false, dvr: true, video360: false, delay: 'none', closedCaptions: false, unlistReplay: false },
+      api:    { title: '', description: '', privacy: 'unlisted', category: 'People & Blogs', tags: [], tagInput: '', autoStart: false, autoStop: false, dvr: true, video360: false, delay: 'none', closedCaptions: false, unlistReplay: false }
     });
     setChannelId(defaultChannel?.id || channels[0]?.id || ''); setThumbnailUrl(null);
     setThumbnailServerUrl(null); setThumbnailBase64(null); setShowThumbGallery(false);
@@ -1012,9 +1020,17 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
             url: upData.file.url,
             createdAt: new Date().toISOString(),
           }]);
+        } else {
+          throw new Error(upData.error || 'Failed to upload');
         }
       } catch (err) {
         console.error('Thumbnail upload failed', err);
+        alert('Gagal upload thumbnail ke server: ' + err.message);
+        setThumbnailUrl(null);
+        setThumbnailServerUrl(null);
+        setThumbnailBase64(null);
+        if (e.target) e.target.value = ''; // Reset file input
+        return; // Stop here, do not proceed with base64 reading
       }
 
       const reader = new FileReader();
@@ -1147,7 +1163,8 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
         }
         // Save with auto-generated stream key + dashboard URL
         const data = {
-          title: title.trim(), description, privacy, category, tags, channelId, 
+          title: title.trim(), description, privacy, category, tags, channelId,
+          autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay, 
           thumbnailUrl: thumbnailServerUrl || thumbnailUrl, thumbnailBase64,
           scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
           enableMonetization, mode: 'api', resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
@@ -1172,7 +1189,8 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
 
     // Manual RTMP mode
     const data = {
-      title: title.trim(), description, privacy, category, tags, channelId, 
+      title: title.trim(), description, privacy, category, tags, channelId,
+      autoStart, autoStop, dvr, video360, delay, closedCaptions, unlistReplay, 
       thumbnailUrl: thumbnailServerUrl || thumbnailUrl,
       scheduledAt: enableSchedule ? scheduledAt : null, endAt: enableSchedule ? endAt : null,
       enableMonetization, mode: tab, resolution, bitrate, fps, selectedMedia, adaptiveEnabled: true,
@@ -1411,6 +1429,50 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
                     <span className="csm-tag-count">{tags.length}/500</span>
                   </div>
                 </div>
+
+                {/* Additional Settings Toggle */}
+                <div className="csm-additional-toggle" onClick={() => setShowAdditional(!showAdditional)} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '16px', marginBottom: '8px', opacity: 0.8, fontSize: '12px' }}>
+                  <ChevronDown size={14} style={{ transform: showAdditional ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                  <span>Additional settings</span>
+                </div>
+
+                {/* Additional Settings Content */}
+                {showAdditional && (
+                  <div className="csm-additional-content" style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '22px', marginBottom: '16px' }}>
+                    <div className="csm-toggle-item compact" onClick={() => updateForm('autoStart', !autoStart)}>
+                      <span>Enable Auto-start</span>
+                      <div className={`csm-switch ${autoStart ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
+                    </div>
+                    <div className="csm-toggle-item compact" onClick={() => updateForm('autoStop', !autoStop)}>
+                      <span>Enable Auto-stop</span>
+                      <div className={`csm-switch ${autoStop ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
+                    </div>
+                    <div className="csm-toggle-item compact" onClick={() => updateForm('dvr', !dvr)}>
+                      <span>Enable DVR</span>
+                      <div className={`csm-switch ${dvr ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
+                    </div>
+                    <div className="csm-toggle-item compact" onClick={() => updateForm('video360', !video360)}>
+                      <span>360° video</span>
+                      <div className={`csm-switch ${video360 ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
+                    </div>
+                    <div className="form-group" style={{ marginTop: '8px' }}>
+                      <label className="form-label" style={{ fontSize: '11px', opacity: 0.7 }}>Added delay</label>
+                      <select className="form-input" value={delay} onChange={(e) => updateForm('delay', e.target.value)} style={{ background: 'transparent', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.1)', borderRadius: 0, padding: '4px 0' }}>
+                        <option value="none">None</option>
+                        <option value="30s">30 Seconds</option>
+                        <option value="60s">1 Minute</option>
+                      </select>
+                    </div>
+                    <div className="csm-toggle-item compact" onClick={() => updateForm('closedCaptions', !closedCaptions)}>
+                      <span>Closed captions</span>
+                      <div className={`csm-switch ${closedCaptions ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
+                    </div>
+                    <div className="csm-toggle-item compact" onClick={() => updateForm('unlistReplay', !unlistReplay)}>
+                      <span>Unlist live replay once stream ends</span>
+                      <div className={`csm-switch ${unlistReplay ? 'on' : ''}`}><div className="csm-switch-knob"/></div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Schedule */}
                 <div className="form-group">

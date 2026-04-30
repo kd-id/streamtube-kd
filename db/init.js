@@ -33,6 +33,7 @@ export function getDb() {
       password_hash TEXT NOT NULL,
       salt TEXT NOT NULL,
       avatar_color TEXT DEFAULT '',
+      avatar_url TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -111,6 +112,18 @@ export function getDb() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
   `);
+
+  // Auto-migration for schema changes
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(users)").all();
+    const hasAvatarUrl = tableInfo.some(col => col.name === 'avatar_url');
+    if (!hasAvatarUrl) {
+      db.prepare("ALTER TABLE users ADD COLUMN avatar_url TEXT DEFAULT ''").run();
+      console.log('[DB] Migrated: Added avatar_url to users table.');
+    }
+  } catch (err) {
+    console.error('[DB] Migration error:', err.message);
+  }
 
   console.log(`[DB] SQLite initialized: ${DB_PATH}`);
   return db;

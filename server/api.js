@@ -719,9 +719,9 @@ export const apiMiddleware = async (req, res, next) => {
             let userId;
             try { userId = JSON.parse(Buffer.from(tokenPayload, 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
             const db = getDb();
-            const user = db.prepare('SELECT id, nickname, email, avatar_color, created_at FROM users WHERE id = ?').get(userId);
+            const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, created_at FROM users WHERE id = ?').get(userId);
             if (!user) return sendJSON(res, 401, { error: 'User not found' });
-            return sendJSON(res, 200, { user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, createdAt: user.created_at } });
+            return sendJSON(res, 200, { user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, createdAt: user.created_at } });
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }
@@ -734,12 +734,19 @@ export const apiMiddleware = async (req, res, next) => {
             if (!auth || !auth.startsWith('Bearer ')) return sendJSON(res, 401, { error: 'Not authenticated' });
             let userId;
             try { userId = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString()).userId; } catch { return sendJSON(res, 401, { error: 'Invalid token' }); }
-            const { nickname, avatarColor } = await readBody(req);
+            const { nickname, email, avatarColor, avatar_url } = await readBody(req);
             const db = getDb();
             if (nickname) db.prepare('UPDATE users SET nickname = ? WHERE id = ?').run(nickname, userId);
+            if (email) {
+              const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, userId);
+              if (existing) return sendJSON(res, 400, { error: 'Email sudah digunakan' });
+              db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, userId);
+            }
             if (avatarColor) db.prepare('UPDATE users SET avatar_color = ? WHERE id = ?').run(avatarColor, userId);
-            const user = db.prepare('SELECT id, nickname, email, avatar_color, created_at FROM users WHERE id = ?').get(userId);
-            return sendJSON(res, 200, { success: true, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, createdAt: user.created_at } });
+            if (avatar_url !== undefined) db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatar_url, userId);
+            
+            const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, created_at FROM users WHERE id = ?').get(userId);
+            return sendJSON(res, 200, { success: true, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, createdAt: user.created_at } });
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }

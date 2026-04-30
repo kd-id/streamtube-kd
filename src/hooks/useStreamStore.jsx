@@ -268,9 +268,11 @@ export function StreamProvider({ children }) {
 
   const stopStream = useCallback((id) => dispatch({ type: 'STOP_STREAM', payload: id }), []);
 
+  const isLive = state.savedStreams.some(s => s.status === 'live' || s.status === 'starting');
+
   return (
     <StreamContext.Provider value={{
-      ...state, goLive, endStream, tick, updateSettings,
+      ...state, isLive, goLive, endStream, tick, updateSettings,
       createStream, updateStream, deleteStream, startStream, stopStream,
     }}>
       {children}

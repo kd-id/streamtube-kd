@@ -76,17 +76,7 @@ export default function Sidebar({ mobileOpen, onCloseMobile, collapsed, onToggle
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <div className="channel-info">
-            <div className="channel-avatar">{userInitials}</div>
-            {!collapsed && (
-              <div className="channel-details">
-                <span className="channel-name">{user?.nickname || 'User'}</span>
-                <span className="channel-handle">{user?.email || ''}</span>
-              </div>
-            )}
-          </div>
-        </div>
+
       </aside>
 
       {/* Mobile Bottom Navigation */}

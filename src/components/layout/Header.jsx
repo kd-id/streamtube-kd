@@ -45,24 +45,28 @@ export default function Header({ onToggleMobile }) {
         <div className="header-user-menu" ref={menuRef}>
           <button
             className="header-user-btn"
+            style={{ padding: '2px', borderRadius: '50%' }}
             onClick={() => setShowUserMenu(v => !v)}
           >
-            <div className="header-avatar" style={{ background: user?.avatarColor || 'linear-gradient(135deg, var(--accent-purple), var(--accent-blue))' }}>
-              <span>{initials}</span>
-            </div>
-            <div className="header-user-info">
-              <span className="header-user-name">{user?.nickname || 'User'}</span>
-              <span className="header-user-email">{user?.email || ''}</span>
-            </div>
-            <ChevronDown size={14} className={`header-chevron ${showUserMenu ? 'open' : ''}`} />
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt="" className="header-avatar-img" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <div className="header-avatar" style={{ background: user?.avatarColor || 'linear-gradient(135deg, var(--accent-purple), var(--accent-blue))' }}>
+                <span>{initials}</span>
+              </div>
+            )}
           </button>
 
           {showUserMenu && (
             <div className="user-dropdown">
               <div className="user-dropdown-header">
-                <div className="dropdown-avatar" style={{ background: user?.avatarColor || 'linear-gradient(135deg, var(--accent-purple), var(--accent-blue))' }}>
-                  {initials}
-                </div>
+                {user?.avatar_url ? (
+                  <img src={user.avatar_url} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
+                ) : (
+                  <div className="dropdown-avatar" style={{ background: user?.avatarColor || 'linear-gradient(135deg, var(--accent-purple), var(--accent-blue))' }}>
+                    {initials}
+                  </div>
+                )}
                 <div className="dropdown-info">
                   <span className="dropdown-name">{user?.nickname || 'User'}</span>
                   <span className="dropdown-email">{user?.email || ''}</span>

@@ -11,7 +11,7 @@ function useNetworkMonitor() {
   const [stats, setStats] = useState({
     upload: 0, download: 0, ping: 0, quality: 'checking', online: navigator.onLine, type: 'unknown'
   });
-  const [sysInfo, setSysInfo] = useState({ ramTotal: 0, cpuCount: 0, storageTotal: 0, storageFree: 0, storageUsedPercent: 0 });
+  const [sysInfo, setSysInfo] = useState({ ramTotal: 0, ramPercent: 0, cpuCount: 0, cpuPercent: 0, storageTotal: 0, storageFree: 0, storageUsedPercent: 0 });
   const [history, setHistory] = useState([]);
   const prevBytes = useRef({ down: 0, up: 0, time: Date.now() });
 
@@ -24,7 +24,7 @@ function useNetworkMonitor() {
       }
 
       // Fetch real bandwidth from backend system stats
-      let dl = 0, ul = 0, cc = 0, rt = 0;
+      let dl = 0, ul = 0, cc = 0, rt = 0, rp = 0, cp = 0;
       try {
         const sysRes = await fetch('/api/system/stats', { cache: 'no-store' });
         if (sysRes.ok) {
@@ -33,6 +33,8 @@ function useNetworkMonitor() {
           ul = parseFloat(data.networkUp || '0');
           cc = data.cpuCount || 0;
           rt = data.ramTotal || 0;
+          rp = parseFloat(data.ramPercent || '0');
+          cp = parseFloat(data.cpuPercent || '0');
         }
       } catch { }
 
@@ -65,7 +67,12 @@ function useNetworkMonitor() {
       const type = conn ? conn.effectiveType : 'unknown';
 
       setStats({ upload: +ul.toFixed(1), download: +dl.toFixed(1), ping, quality, online: true, type });
-      setSysInfo({ ramTotal: rt, cpuCount: cc, storageTotal: stg.t, storageFree: stg.f, storageUsedPercent: stg.t > 0 ? ((stg.t - stg.f) / stg.t * 100) : 0 });
+      setSysInfo({ 
+        ramTotal: rt, ramPercent: rp, 
+        cpuCount: cc, cpuPercent: cp, 
+        storageTotal: stg.t, storageFree: stg.f, 
+        storageUsedPercent: stg.t > 0 ? ((stg.t - stg.f) / stg.t * 100) : 0 
+      });
       setHistory(prev => {
         const now = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         const next = [...prev, { time: now, dl: +dl.toFixed(1), ul: +ul.toFixed(1), ping }];
@@ -237,17 +244,34 @@ export default function Dashboard() {
 
           {/* VPS Specs Notification (Auto Detect) */}
           <div className="glass-card dash-section" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-             <div style={{ flex: 1, borderRight: '1px solid rgba(255,255,255,0.1)' }}>
-               <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888', marginBottom: '4px' }}>RAM</div>
-               <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{sysInfo.ramTotal > 0 ? sysInfo.ramTotal + ' GB' : '...'}</div>
+             <div style={{ flex: 1, borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '20px' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                 <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888' }}>RAM ({sysInfo.ramTotal > 0 ? sysInfo.ramTotal + ' GB' : '...'})</span>
+                 <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{sysInfo.ramPercent}%</span>
+               </div>
+               <div style={{ height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                 <div style={{ height: '100%', width: `${sysInfo.ramPercent}%`, background: sysInfo.ramPercent > 85 ? '#ef4444' : sysInfo.ramPercent > 60 ? '#f59e0b' : '#2dd4a8', transition: 'width 0.5s ease' }} />
+               </div>
              </div>
-             <div style={{ flex: 1, borderRight: '1px solid rgba(255,255,255,0.1)' }}>
-               <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888', marginBottom: '4px' }}>ROM/Storage</div>
-               <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{sysInfo.storageTotal > 0 ? `${sysInfo.storageTotal} GB` : '...'}</div>
+             
+             <div style={{ flex: 1, borderRight: '1px solid rgba(255,255,255,0.1)', paddingRight: '20px' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                 <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888' }}>CPU ({sysInfo.cpuCount > 0 ? sysInfo.cpuCount + ' Cores' : '...'})</span>
+                 <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{sysInfo.cpuPercent}%</span>
+               </div>
+               <div style={{ height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                 <div style={{ height: '100%', width: `${sysInfo.cpuPercent}%`, background: sysInfo.cpuPercent > 85 ? '#ef4444' : sysInfo.cpuPercent > 60 ? '#f59e0b' : '#4d8eff', transition: 'width 0.5s ease' }} />
+               </div>
              </div>
+
              <div style={{ flex: 1 }}>
-               <div style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888', marginBottom: '4px' }}>CPU Cores</div>
-               <div style={{ fontSize: '16px', fontWeight: 'bold' }}>{sysInfo.cpuCount > 0 ? sysInfo.cpuCount + ' Cores' : '...'}</div>
+               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                 <span style={{ fontSize: '11px', textTransform: 'uppercase', color: '#888' }}>Storage ({sysInfo.storageTotal > 0 ? sysInfo.storageTotal + ' GB' : '...'})</span>
+                 <span style={{ fontSize: '11px', fontWeight: 'bold' }}>{sysInfo.storageUsedPercent.toFixed(1)}%</span>
+               </div>
+               <div style={{ height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                 <div style={{ height: '100%', width: `${sysInfo.storageUsedPercent}%`, background: sysInfo.storageUsedPercent > 85 ? '#ef4444' : sysInfo.storageUsedPercent > 60 ? '#f59e0b' : '#a855f7', transition: 'width 0.5s ease' }} />
+               </div>
              </div>
           </div>
 

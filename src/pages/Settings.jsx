@@ -64,16 +64,42 @@ function ProfileTab() {
   const { user, updateProfile } = useAuth();
   const [nickname, setNickname] = useState(user?.nickname || '');
   const [email, setEmail] = useState(user?.email || '');
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
   const [saved, setSaved] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const initials = nickname
     ? nickname.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
     : 'U';
 
   const handleSave = () => {
-    updateProfile({ nickname: nickname.trim(), email: email.trim() });
+    updateProfile({ nickname: nickname.trim(), email: email.trim(), avatar_url: avatarUrl });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const token = localStorage.getItem('streamtube_token');
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch('/api/upload', { method: 'POST', headers, body: formData });
+      const data = await res.json();
+      if (data.success && data.file) {
+        setAvatarUrl(data.file.url);
+      } else {
+        alert('Upload failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Avatar upload failed: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -85,8 +111,19 @@ function ProfileTab() {
         </div>
 
         <div className="profile-avatar-section">
-          <div className="profile-avatar-big" style={{ background: user?.avatarColor || 'var(--accent-purple)' }}>
-            {initials}
+          <div className="profile-avatar-big" style={{ background: user?.avatarColor || 'var(--accent-purple)', position: 'relative', overflow: 'hidden' }}>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              initials
+            )}
+            <div 
+              style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', fontSize: '10px', textAlign: 'center', cursor: 'pointer', padding: '4px 0' }}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? '...' : 'Change'}
+            </div>
+            <input type="file" accept="image/*" ref={fileInputRef} onChange={handleAvatarUpload} style={{ display: 'none' }} />
           </div>
           <div className="profile-avatar-info">
             <span className="profile-avatar-name">{user?.nickname || 'User'}</span>
