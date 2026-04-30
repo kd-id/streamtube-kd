@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   User, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
