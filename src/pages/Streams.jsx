@@ -100,7 +100,7 @@ function formatTime(s) {
 const encPath = (p) => p.split('/').map(s => encodeURIComponent(s)).join('/');
 
 export default function Streams() {
-  const { savedStreams, createStream, updateStream, deleteStream, startStream, stopStream, tick } = useStream();
+  const { savedStreams, createStream, updateStream, deleteStream, startStream, stopStream, tick, streamsLoading } = useStream();
   const { channels, defaultChannel, credentials, updateChannel } = useYouTube();
   const { scenes } = useOverlay();
   const [search, setSearch] = useState('');
@@ -420,7 +420,7 @@ export default function Streams() {
           <div className="hpm-header">
             <div className="hpm-title">
               <Wifi size={16} />
-              <span>Stream Health — {activeHealthStream.title}</span>
+              <span className="hpm-stream-title" title={activeHealthStream.title}>Stream Health - {activeHealthStream.title}</span>
               {activeHealthStream.channelId && channels.find(c => c.id === activeHealthStream.channelId) && (
                 <a href={`https://youtube.com/${channels.find(c => c.id === activeHealthStream.channelId).handle}`} target="_blank" rel="noreferrer" className="hpm-channel-link">
                   <ExternalLink size={12} style={{ marginRight: '4px' }}/> {channels.find(c => c.id === activeHealthStream.channelId).name}
@@ -557,7 +557,13 @@ export default function Streams() {
       </div>
 
       {/* Stream Table — 7 columns */}
-      {filtered.length === 0 ? (
+      {streamsLoading ? (
+        <div className="streams-empty">
+          <div className="streams-loading-spinner" />
+          <h3>Memuat Streams...</h3>
+          <p>Mengambil data dari server</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="streams-empty">
           <Radio size={40} strokeWidth={1} />
           <h3>No Streams Yet</h3>
@@ -589,11 +595,11 @@ export default function Streams() {
                         <div className="st-name-cell">
                           <div className="st-thumb">
                             {s.selectedMedia?.serverFilename ? (
-                                <img src={`/api/video/thumbnail/${encPath(s.selectedMedia.serverFilename)}`} alt="" onError={(e) => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} />
+                                <img loading="lazy" src={`/api/video/thumbnail/${encPath(s.selectedMedia.serverFilename)}`} alt="" onError={(e) => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} />
                               ) : s.thumbnailUrl && !s.thumbnailUrl.startsWith('blob:') ? (
-                                <img src={s.thumbnailUrl} alt="" />
+                                <img loading="lazy" src={s.thumbnailUrl} alt="" />
                               ) : s.thumbnailBase64 ? (
-                                <img src={s.thumbnailBase64} alt="" />
+                                <img loading="lazy" src={s.thumbnailBase64} alt="" />
                               ) : s.selectedMedia?.type === 'playlist' ? (
                                 <div className="st-thumb-placeholder playlist"><ListMusic size={14} /></div>
                               ) : (
@@ -602,7 +608,7 @@ export default function Streams() {
                             }
                           </div>
                           <div className="st-name-info">
-                            <span className="st-title">{s.title}</span>
+                            <span className="st-title" title={s.title}>{s.title}</span>
                             <span className="st-meta">
                               {s.selectedMedia?.type === 'playlist'
                                 ? `Playlist • ${s.selectedMedia?.videos || 0} videos • ${s.selectedMedia?.playMode || 'Sequential'}`

@@ -26,6 +26,7 @@ const initialState = {
   settings: { ...defaultStreamSettings },
   viewers: 0,
   savedStreams: [],
+  streamsLoading: true,
 };
 
 function rand4() {
@@ -68,7 +69,9 @@ function reducer(state, action) {
 
     // Saved streams
     case 'SET_STREAMS':
-      return { ...state, savedStreams: action.payload };
+      return { ...state, savedStreams: action.payload, streamsLoading: false };
+    case 'SET_STREAMS_LOADING':
+      return { ...state, streamsLoading: action.payload };
     case 'CREATE_STREAM':
       return { ...state, savedStreams: [...state.savedStreams, action.payload] };
     case 'UPDATE_STREAM':
@@ -145,46 +148,60 @@ export function StreamProvider({ children }) {
 
   const getToken = () => localStorage.getItem('streamtube_token');
 
-  // On mount: fetch streams from DB, then check active status
+  // On mount: fetch streams from DB and active status in parallel
   useEffect(() => {
     const init = async () => {
       const token = getToken();
-      if (token) {
-        try {
-          const res = await fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } });
-          const data = await res.json();
-          if (data.success && data.data) {
-            dispatch({
-              type: 'SET_STREAMS',
-              payload: data.data.map(s => ({ ...s, status: 'offline', elapsedSeconds: 0, viewers: 0, health: null }))
-            });
-          }
-        } catch {}
+      if (!token) {
+        dispatch({ type: 'SET_STREAMS_LOADING', payload: false });
+        return;
       }
 
-      // Sync active streams
       try {
-        const res = await fetch('/api/streams/active');
-        const data = await res.json();
-        if (data.streams && data.streams.length > 0) {
-          data.streams.forEach(active => {
-            if (active.status === 'live' || active.status === 'starting') {
-              let elapsed = 0;
+        const [streamRes, activeRes] = await Promise.all([
+          fetch('/api/data/streams', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch('/api/streams/active').catch(() => ({ json: () => ({ streams: [] }) })),
+        ]);
+
+        const [data, activeData] = await Promise.all([
+          streamRes.json(),
+          activeRes.json().catch(() => ({ streams: [] })),
+        ]);
+
+        if (data.success && data.data) {
+          const activeMap = {};
+          if (activeData.streams) {
+            activeData.streams.forEach(a => { activeMap[a.streamId] = a; });
+          }
+
+          const merged = data.data.map(s => {
+            const active = activeMap[s.id];
+            let status = 'offline';
+            let elapsedSeconds = 0;
+            if (active && (active.status === 'live' || active.status === 'starting')) {
+              status = active.status;
               if (active.startedAt) {
-                elapsed = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
-                if (elapsed < 0) elapsed = 0;
+                elapsedSeconds = Math.floor((Date.now() - new Date(active.startedAt).getTime()) / 1000);
+                if (elapsedSeconds < 0) elapsedSeconds = 0;
               }
-              dispatch({ type: 'UPDATE_STREAM', payload: { id: active.streamId, updates: { status: active.status, elapsedSeconds: elapsed } } });
             }
+            return { ...s, status, elapsedSeconds, viewers: 0, health: null };
           });
+
+          dispatch({ type: 'SET_STREAMS', payload: merged });
+        } else {
+          dispatch({ type: 'SET_STREAMS_LOADING', payload: false });
         }
-      } catch {}
+      } catch {
+        dispatch({ type: 'SET_STREAMS_LOADING', payload: false });
+      }
     };
     init();
   }, []);
 
   // ── Polling: sync streams from server every 30s for cross-device updates ──
   const lastSyncHash = useRef('');
+  const initDone = useRef(false);
   useEffect(() => {
     let intervalId;
     let controller = null;
@@ -260,8 +277,8 @@ export function StreamProvider({ children }) {
       }
     };
 
-    // Poll once initially
-    poll();
+    // Skip first poll — init already fetched data
+    initDone.current = true;
     intervalId = setInterval(poll, 30000); // Poll every 30 seconds
 
     // Sync when user switches back to the tab or window regains focus
