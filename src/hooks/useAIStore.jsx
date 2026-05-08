@@ -188,6 +188,21 @@ async function parseOpenAIResponse(res) {
   throw new Error(`Invalid response: ${text.substring(0, 200)}`);
 }
 
+// Safe fetch with better error messages for cert/connection issues
+async function safeFetch(url, options = {}) {
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err.message?.includes('certificate') || err.message?.includes('CERT_') || err.message?.includes('SSL') || err.message?.includes('TLS')) {
+      throw new Error(`Certificate error: ${url}. If using self-signed cert, access the server URL directly in browser first to accept it.`);
+    }
+    if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+      throw new Error(`Cannot connect: ${url}. Check if server is running and accessible.`);
+    }
+    throw err;
+  }
+}
+
 // ─── Context ───
 const AIContext = createContext(null);
 
@@ -368,7 +383,7 @@ export function AIProvider({ children }) {
       const keys = Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)));
       for (let i = 0; i < keys.length; i += 1) {
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keys[i]}`);
+          const res = await safeFetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keys[i]}`);
           const data = await res.json();
           if (data.error) throw new Error(data.error.message);
           return (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => m.name.replace('models/', ''));
@@ -381,7 +396,7 @@ export function AIProvider({ children }) {
     const effectiveBase = base || getEffectiveBase(prov);
     const modelsEndpoint = getEffectiveEndpoint(prov, 'models') || '/models';
     const url = joinEndpoint(effectiveBase, modelsEndpoint);
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${rawKey.trim()}` } });
+    const res = await safeFetch(url, { headers: { Authorization: `Bearer ${rawKey.trim()}` } });
     const data = await parseOpenAIResponse(res);
     if (data.error) throw new Error(data.error.message || data.error);
     return (data.data || []).map(m => m.id).sort();
@@ -399,7 +414,7 @@ export function AIProvider({ children }) {
       for (let i = 0; i < keys.length; i += 1) {
         const keyLabel = keys.length > 1 ? `Key ${i + 1} (...${keys[i].slice(-6)})` : 'Key';
         try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${keys[i]}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }) });
+          const res = await safeFetch(`https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${keys[i]}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }) });
           const data = await res.json();
           if (data.error) results.push(`${keyLabel}: FAILED ${data.error.message}`);
           else results.push(`${keyLabel}: OK "${data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK'}"`);
@@ -410,7 +425,7 @@ export function AIProvider({ children }) {
     }
     if (provider.type === 'anthropic') {
       const url = joinEndpoint(base || getEffectiveBase(prov), getEffectiveEndpoint(prov, 'messages') || '/messages');
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': rawKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' }, body: JSON.stringify({ model: cleanModel || 'claude-3-haiku-20240307', max_tokens: MAX_TOKENS.test, messages: [{ role: 'user', content: prompt }] }) });
+      const res = await safeFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': rawKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' }, body: JSON.stringify({ model: cleanModel || 'claude-3-haiku-20240307', max_tokens: MAX_TOKENS.test, messages: [{ role: 'user', content: prompt }] }) });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message);
       return data.content?.[0]?.text?.trim() || 'OK';
@@ -420,7 +435,7 @@ export function AIProvider({ children }) {
     const effectiveBase = base || getEffectiveBase(prov);
     const chatEndpoint = getEffectiveEndpoint(prov, 'chat') || '/chat/completions';
     const url = joinEndpoint(effectiveBase, chatEndpoint);
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey.trim()}` }, body: JSON.stringify({ model: cleanModel || 'gpt-4o', messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS.test }) });
+    const res = await safeFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey.trim()}` }, body: JSON.stringify({ model: cleanModel || 'gpt-4o', messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS.test }) });
     const data = await parseOpenAIResponse(res);
     if (data.error) throw new Error(data.error.message);
     return data.choices?.[0]?.message?.content?.trim() || 'OK';
@@ -430,18 +445,18 @@ export function AIProvider({ children }) {
     const provDef = getProviderFromState(stateRef.current, provider);
     if (!provDef) throw new Error('Provider not found');
     if (provDef.type === 'gemini') {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens } }) });
+      const res = await safeFetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens } }) });
       const data = await res.json();
       return { data, status: res.status, provider: 'gemini' };
     }
     if (provDef.type === 'anthropic') {
       const url = joinEndpoint(base || getEffectiveBase(provider), getEffectiveEndpoint(provider, 'messages') || '/messages');
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' }, body: JSON.stringify({ model: model || 'claude-3-haiku-20240307', max_tokens: maxTokens, messages: [{ role: 'user', content: promptText }], temperature: 0.7 }) });
+      const res = await safeFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' }, body: JSON.stringify({ model: model || 'claude-3-haiku-20240307', max_tokens: maxTokens, messages: [{ role: 'user', content: promptText }], temperature: 0.7 }) });
       const data = await res.json();
       return { data, status: res.status, provider: 'anthropic' };
     }
     const url = joinEndpoint(base || getEffectiveBase(provider), getEffectiveEndpoint(provider, 'chat') || '/chat/completions');
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: JSON.stringify({ model: model || 'gpt-4o', messages: [{ role: 'user', content: promptText }], temperature: 0.7, max_tokens: maxTokens }) });
+    const res = await safeFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` }, body: JSON.stringify({ model: model || 'gpt-4o', messages: [{ role: 'user', content: promptText }], temperature: 0.7, max_tokens: maxTokens }) });
     const data = await parseOpenAIResponse(res);
     return { data, status: res.status, provider: 'openai-compat' };
   }, [getEffectiveBase, getEffectiveEndpoint]);
