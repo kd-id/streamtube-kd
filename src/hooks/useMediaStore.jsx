@@ -25,7 +25,7 @@ export function MediaProvider({ children }) {
     init();
   }, []);
 
-  // Save single file metadata to DB (for updates like category change)
+  // Save single file metadata to DB
   const saveFileToDB = useCallback(async (f) => {
     const token = getToken();
     if (!token || !f?.id) return false;
@@ -40,13 +40,26 @@ export function MediaProvider({ children }) {
     } catch { return false; }
   }, []);
 
-  // Add files to local state — DB save is handled by backend upload endpoint
-  const addFiles = useCallback((newFiles) => {
+  // Add files to local state + save to DB as backup
+  const addFiles = useCallback(async (newFiles) => {
     setFiles(prev => {
       const existingIds = new Set(prev.map(f => f.id));
       const unique = newFiles.filter(f => !existingIds.has(f.id));
       return [...unique, ...prev];
     });
+    // Backup: save each file to DB (in case backend upload didn't save)
+    const token = getToken();
+    if (token) {
+      for (const f of newFiles) {
+        try {
+          await fetch('/api/data/media_files', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify(f)
+          });
+        } catch {}
+      }
+    }
   }, []);
 
   const deleteFile = useCallback(async (id) => {

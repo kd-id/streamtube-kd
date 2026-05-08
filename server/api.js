@@ -1250,10 +1250,19 @@ export const apiMiddleware = async (req, res, next) => {
                     try {
                       const data = JSON.parse(row.data);
                       let fileExists = false;
-                      if (data.serverPath && fs.existsSync(data.serverPath)) {
-                        fileExists = true;
-                      } else if (data.serverFilename) {
+                      // Check relative path first (portable, not affected by path changes)
+                      if (data.serverFilename) {
                         const checkPath = path.join(UPLOAD_DIR, data.serverFilename);
+                        if (fs.existsSync(checkPath)) fileExists = true;
+                      }
+                      // Fallback: check absolute path
+                      if (!fileExists && data.serverPath) {
+                        if (fs.existsSync(data.serverPath)) fileExists = true;
+                      }
+                      // Fallback: check url path
+                      if (!fileExists && data.url) {
+                        const urlPath = data.url.replace(/^\/uploads\//, '');
+                        const checkPath = path.join(UPLOAD_DIR, urlPath);
                         if (fs.existsSync(checkPath)) fileExists = true;
                       }
                       
