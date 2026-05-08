@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  User, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
+  User, Users, Shield, Link2, Info, Save, Copy, Check, Plus, Trash2,
   Star, Settings as SettingsIcon, Eye, EyeOff, ExternalLink,
   RefreshCw, Lock, Mail, LogOut, Bot, Server, Key, BrainCircuit,
   Unlink, ChevronDown, ChevronUp, Search, Sparkles, Cpu, Network, Zap, X,
@@ -14,6 +14,7 @@ import './Settings.css';
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'security', label: 'Security', icon: Shield },
+  { id: 'accounts', label: 'Accounts', icon: Users, adminOnly: true },
   { id: 'integration', label: 'Integration', icon: Link2 },
   { id: 'ai', label: 'AI Assistants', icon: Bot },
   { id: 'about', label: 'About', icon: Info },
@@ -27,6 +28,12 @@ function formatNum(n) {
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState('profile');
+  const { user } = useAuth();
+  const visibleTabs = useMemo(() => TABS.filter(tab => !tab.adminOnly || user?.role === 'admin'), [user?.role]);
+
+  useEffect(() => {
+    if (!visibleTabs.some(tab => tab.id === activeTab)) setActiveTab('profile');
+  }, [activeTab, visibleTabs]);
 
   return (
     <div className="page">
@@ -35,7 +42,7 @@ export default function Settings() {
 
       {/* Tab bar */}
       <div className="settings-tabs">
-        {TABS.map(tab => (
+        {visibleTabs.map(tab => (
           <button
             key={tab.id}
             className={`settings-tab ${activeTab === tab.id ? 'active' : ''}`}
@@ -51,6 +58,7 @@ export default function Settings() {
       <div className="settings-tab-content">
         {activeTab === 'profile' && <ProfileTab />}
         {activeTab === 'security' && <SecurityTab />}
+        {activeTab === 'accounts' && <AccountsTab />}
         {activeTab === 'integration' && <IntegrationTab />}
         {activeTab === 'ai' && <AITab />}
         {activeTab === 'about' && <AboutTab />}
@@ -182,7 +190,7 @@ function SecurityTab() {
   const [showNew, setShowNew] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
-  const handleChange = () => {
+  const handleChange = async () => {
     setMsg({ type: '', text: '' });
     if (!currentPw || !newPw || !confirmPw) {
       setMsg({ type: 'error', text: 'Semua field wajib diisi' });
@@ -196,7 +204,7 @@ function SecurityTab() {
       setMsg({ type: 'error', text: 'Password confirmation does not match' });
       return;
     }
-    const result = changePassword(currentPw, newPw);
+    const result = await changePassword(currentPw, newPw);
     if (result.success) {
       setMsg({ type: 'success', text: 'Password changed successfully' });
       setCurrentPw('');
@@ -273,6 +281,110 @@ function SecurityTab() {
 }
 
 /* ─── Integration Tab ─── */
+function AccountsTab() {
+  const { user, fetchUsers, updateUserRole, deleteUser } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [msg, setMsg] = useState({ type: '', text: '' });
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    const result = await fetchUsers();
+    if (result.success) {
+      setUsers(result.users || []);
+      setMsg({ type: '', text: '' });
+    } else {
+      setMsg({ type: 'error', text: result.error || 'Gagal memuat akun' });
+    }
+    setLoading(false);
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
+
+  const handleRoleChange = async (targetUser, role) => {
+    const result = await updateUserRole(targetUser.id, role);
+    if (!result.success) {
+      setMsg({ type: 'error', text: result.error || 'Gagal mengubah role' });
+      return;
+    }
+    setUsers(prev => prev.map(item => item.id === targetUser.id ? result.user : item));
+    setMsg({ type: 'success', text: `Role ${targetUser.email} diubah ke ${role}` });
+  };
+
+  const handleDelete = async (targetUser) => {
+    if (!confirm(`Hapus akun ${targetUser.email}? Data milik akun ini juga akan dibersihkan.`)) return;
+    const result = await deleteUser(targetUser.id);
+    if (!result.success) {
+      setMsg({ type: 'error', text: result.error || 'Gagal menghapus akun' });
+      return;
+    }
+    setUsers(prev => prev.filter(item => item.id !== targetUser.id));
+    setMsg({ type: 'success', text: `Akun ${targetUser.email} dihapus` });
+  };
+
+  return (
+    <div className="stab-section accounts-section">
+      <div className="glass-card stab-card">
+        <div className="stab-header">
+          <Users size={18} />
+          <div className="stab-header-left">
+            <h2>Account Roles</h2>
+            <span className="stab-header-sub">Admin dapat memilih role admin atau user.</span>
+          </div>
+          <button className="btn btn-secondary btn-sm" onClick={loadUsers} disabled={loading}>
+            <RefreshCw size={13} className={loading ? 'spin' : ''} /> Refresh
+          </button>
+        </div>
+
+        {msg.text && <div className={`stab-msg ${msg.type}`}>{msg.text}</div>}
+
+        <div className="accounts-list">
+          {loading ? (
+            <div className="accounts-empty">Loading accounts...</div>
+          ) : users.length === 0 ? (
+            <div className="accounts-empty">Belum ada akun.</div>
+          ) : users.map(account => (
+            <div key={account.id} className="account-row">
+              <div className="account-avatar">
+                {account.avatar_url ? (
+                  <img src={account.avatar_url} alt="" />
+                ) : (
+                  <span>{(account.nickname || account.email || 'U').slice(0, 1).toUpperCase()}</span>
+                )}
+              </div>
+              <div className="account-info">
+                <div className="account-name">
+                  {account.nickname || 'User'}
+                  {account.id === user?.id && <span className="account-self">You</span>}
+                </div>
+                <span className="account-email">{account.email}</span>
+              </div>
+              <select
+                className="account-role-select"
+                value={account.role || 'user'}
+                onChange={e => handleRoleChange(account, e.target.value)}
+              >
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+              </select>
+              <button
+                className="icon-action-btn danger"
+                onClick={() => handleDelete(account)}
+                disabled={account.id === user?.id}
+                title={account.id === user?.id ? 'Tidak bisa hapus akun sendiri' : 'Hapus akun'}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function IntegrationTab() {
   const { credentials, channels, connecting, hasCredentials, saveCredentials, connectChannel, removeChannel, setDefaultChannel, disconnectAll } = useYouTube();
   const [clientId, setClientId] = useState(credentials.clientId);
@@ -512,416 +624,422 @@ function AboutTab() {
   );
 }
 /* ─── AI Assistants Tab ─── */
-const AI_PROVIDERS = [
-  { id: 'gemini',     name: 'Google Gemini',      short: 'Gemini',    icon: <Sparkles size={18}/>,     color: '#4285f4', grad: 'linear-gradient(135deg,#4285f4,#34a853)', defaultBase: '' },
-  { id: 'openai',     name: 'OpenAI',              short: 'OpenAI',    icon: <BrainCircuit size={18}/>, color: '#10a37f', grad: 'linear-gradient(135deg,#10a37f,#1cb08e)', defaultBase: 'https://api.openai.com/v1' },
-  { id: 'anthropic',  name: 'Anthropic',           short: 'Claude',    icon: <Zap size={18}/>,          color: '#d97757', grad: 'linear-gradient(135deg,#d97757,#e8935a)', defaultBase: 'https://api.anthropic.com/v1' },
-  { id: 'grok',       name: 'xAI Grok',            short: 'Grok',      icon: <X size={18}/>,            color: '#a0a0a0', grad: 'linear-gradient(135deg,#555,#888)',       defaultBase: 'https://api.x.ai/v1' },
-  { id: 'groq',       name: 'Groq',                short: 'Groq',      icon: <Cpu size={18}/>,          color: '#f55036', grad: 'linear-gradient(135deg,#f55036,#ff7055)', defaultBase: 'https://api.groq.com/openai/v1' },
-  { id: 'openrouter', name: 'OpenRouter',          short: 'Router',    icon: <Network size={18}/>,      color: '#3b82f6', grad: 'linear-gradient(135deg,#3b82f6,#6366f1)', defaultBase: 'https://openrouter.ai/api/v1' },
-  { id: 'devin',      name: 'Devin.ai',            short: 'Devin',     icon: <Terminal size={18}/>,     color: '#f5a623', grad: 'linear-gradient(135deg,#f5a623,#f8e71c)', defaultBase: 'https://api.devin.ai/v1' },
-  { id: 'custom',     name: 'Custom',              short: 'Custom',    icon: <Server size={18}/>,       color: '#8b5cf6', grad: 'linear-gradient(135deg,#8b5cf6,#a78bfa)', defaultBase: '' },
-];
-
-const AI_MODELS = {
-  gemini:     ['gemini-2.5-flash','gemini-2.5-pro','gemini-2.0-flash','gemini-2.0-flash-lite','gemini-1.5-flash','gemini-1.5-pro','gemini-1.5-flash-8b'],
-  openai:     ['gpt-4.1','gpt-4.1-mini','gpt-4o','gpt-4o-mini','gpt-4-turbo','gpt-3.5-turbo'],
-  anthropic:  ['claude-opus-4-5','claude-sonnet-4-5','claude-haiku-4-5','claude-3-opus-20240229','claude-3-sonnet-20240229','claude-3-haiku-20240307'],
-  grok:       ['grok-3','grok-3-mini','grok-2','grok-2-mini'],
-  groq:       ['llama-3.3-70b-versatile','llama-3.1-8b-instant','gemma2-9b-it','mixtral-8x7b-32768'],
-  openrouter: ['google/gemini-2.5-flash','google/gemini-2.5-pro','openai/gpt-4o','anthropic/claude-3-opus','meta-llama/llama-3-70b-instruct'],
-  devin:      ['devin-session'], // placeholder
-  custom:     [],
-};
-
 function AITab() {
-  const { config, updateConfig, deleteApiKey, addApiKeys, fetchAvailableModels, testConnection, getEffectiveKey, getEffectiveBase, saveProviderModels } = useAIStore();
-  const [provider, setProvider] = useState(config.provider || 'gemini');
-  
-  // API Key input is always empty — it's for ADDING new keys, not editing existing
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [modelName, setModelName] = useState(config.modelName || 'gemini-2.5-flash');
-  // Only show user's custom override — the default is shown via placeholder
-  const initialBase = config.baseUrls?.[config.provider || 'gemini'] || '';
-  const [baseUrl, setBaseUrl] = useState(initialBase);
-  const [customTemplate, setCustomTemplate] = useState(config.customBodyTemplate || '');
-  const [customPath, setCustomPath] = useState(config.customResponsePath || '');
+  const {
+    config, updateConfig, addProvider, deleteProvider, updateProviderDetails,
+    deleteApiKey, addApiKeys, fetchAvailableModels, testConnection,
+    getEffectiveKey, getEffectiveBase, getEffectiveEndpoint, saveProviderModels,
+  } = useAIStore();
 
-  const [saved, setSaved] = useState(false);
+  const providers = config.providers || [];
+  const [provider, setProvider] = useState(config.provider || 'gemini');
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const [showKey, setShowKey] = useState(false);
+  const [modelName, setModelName] = useState(config.modelName || '');
+  const [modelList, setModelList] = useState(config.providerModels?.[config.provider || 'gemini'] || []);
   const [modSearch, setModSearch] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [endpointDrafts, setEndpointDrafts] = useState({});
+  const [saved, setSaved] = useState(false);
   const [addKeyMsg, setAddKeyMsg] = useState('');
-  
-  // Initialize model list from persisted providerModels or fallback to AI_MODELS
-  const [modelList, setModelList] = useState(config.providerModels?.[config.provider || 'gemini'] || AI_MODELS[config.provider || 'gemini'] || AI_MODELS.gemini);
   const [fetchingModels, setFetchingModels] = useState(false);
   const [fetchMsg, setFetchMsg] = useState('');
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
+  const [showAddProvider, setShowAddProvider] = useState(false);
+  const [newProvider, setNewProvider] = useState({
+    name: '',
+    type: 'openai-compatible',
+    baseUrl: '',
+    chat: '/chat/completions',
+    models: '/models',
+  });
 
-  const activeProvider = AI_PROVIDERS.find(p => p.id === provider) || AI_PROVIDERS[0];
-  const filteredModels = modelList.filter(m => m.toLowerCase().includes(modSearch.toLowerCase()));
-  
-  // Stored keys for the active provider
+  const activeProvider = providers.find(p => p.id === provider) || providers[0];
   const storedKeys = getEffectiveKey(provider).split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
   const hasKeys = storedKeys.length > 0;
 
-  // Sync model list when server config loads (async) or provider changes
-  useEffect(() => {
-    const serverModels = config.providerModels?.[provider];
-    if (serverModels && serverModels.length > 0) {
-      setModelList(serverModels);
-      // Also sync modelName if current provider matches config provider
-      if (provider === config.provider && config.modelName && serverModels.includes(config.modelName)) {
-        setModelName(config.modelName);
-      }
-    }
-  }, [config.providerModels, provider, config.provider, config.modelName]);
-
-  const handleProviderSelect = (prov) => {
-    if (provider === prov.id) return;
-    setProvider(prov.id);
-    setApiKeyInput(''); // Always empty on switch
-    setAddKeyMsg('');
-    
-    const userOverride = config.baseUrls?.[prov.id] || '';
-    setBaseUrl(userOverride);
-    
-    const savedModels = config.providerModels?.[prov.id] || AI_MODELS[prov.id] || [];
-    setModelList(savedModels);
-    
-    let nextModel = '';
-    if (prov.id === config.provider && config.modelName) {
-      nextModel = config.modelName;
-    } else {
-      nextModel = savedModels[0] || '';
-    }
-    setModelName(nextModel);
-
-    // Auto-save the provider switch (don't touch keys)
-    updateConfig({
-      provider: prov.id,
-      modelName: nextModel,
-      baseUrl: userOverride,
-      customBodyTemplate: customTemplate,
-      customResponsePath: customPath.trim()
-    });
-
-    setFetchMsg('');
-    setTestResult(null);
+  const getTheme = (item) => {
+    const themes = {
+      gemini: { icon: <Sparkles size={18} />, color: '#4285f4' },
+      openai: { icon: <BrainCircuit size={18} />, color: '#10a37f' },
+      anthropic: { icon: <Zap size={18} />, color: '#d97757' },
+      grok: { icon: <X size={18} />, color: '#a0a0a0' },
+      groq: { icon: <Cpu size={18} />, color: '#f55036' },
+      openrouter: { icon: <Network size={18} />, color: '#3b82f6' },
+      devin: { icon: <Terminal size={18} />, color: '#f5a623' },
+      leonardo: { icon: <Sparkles size={18} />, color: '#a855f7' },
+    };
+    if (themes[item?.id]) return themes[item.id];
+    if (item?.type === 'leonardo') return themes.leonardo;
+    if (item?.type === 'anthropic') return themes.anthropic;
+    return { icon: <Server size={18} />, color: '#4d8eff' };
   };
 
-  // Add key(s) from input → append to stored keys
-  const handleAddKey = () => {
+  const endpointFields = useMemo(() => {
+    if (!activeProvider) return [];
+    if (activeProvider.type === 'gemini') return [];
+    if (activeProvider.type === 'anthropic') return [{ key: 'messages', label: 'Messages Endpoint', placeholder: '/messages' }];
+    if (activeProvider.type === 'devin') return [{ key: 'sessions', label: 'Sessions Endpoint', placeholder: '/sessions' }];
+    if (activeProvider.type === 'leonardo') {
+      return [
+        { key: 'image', label: 'Image V2 Endpoint', placeholder: '/v2/generations' },
+        { key: 'imageLegacy', label: 'Image V1 Endpoint', placeholder: '/v1/generations' },
+        { key: 'video', label: 'Video Endpoint', placeholder: '/v2/generations' },
+        { key: 'videoImage', label: 'Image-to-Video Endpoint', placeholder: '/v1/generations-image-to-video' },
+        { key: 'status', label: 'Status Endpoint', placeholder: '/v1/generations/{{id}}' },
+      ];
+    }
+    return [
+      { key: 'chat', label: 'Chat Endpoint', placeholder: '/chat/completions' },
+      { key: 'models', label: 'Models Endpoint', placeholder: '/models' },
+    ];
+  }, [activeProvider]);
+
+  useEffect(() => {
+    if (!providers.length) return;
+    const nextProvider = providers.some(p => p.id === provider) ? provider : providers[0].id;
+    if (nextProvider !== provider) setProvider(nextProvider);
+  }, [providers, provider]);
+
+  useEffect(() => {
+    if (!activeProvider) return;
+    setBaseUrl(getEffectiveBase(activeProvider.id));
+    const endpoints = {};
+    Object.keys(activeProvider.endpoints || {}).forEach(key => {
+      endpoints[key] = getEffectiveEndpoint(activeProvider.id, key);
+    });
+    setEndpointDrafts(endpoints);
+    const savedModels = config.providerModels?.[activeProvider.id] || [];
+    setModelList(savedModels.length ? savedModels : []);
+    setModelName(activeProvider.id === config.provider ? (config.modelName || savedModels[0] || '') : (savedModels[0] || ''));
+    setFetchMsg('');
+    setTestResult(null);
+  }, [activeProvider?.id, config.provider, config.modelName, config.providerModels, getEffectiveBase, getEffectiveEndpoint]);
+
+  const handleProviderSelect = (prov) => {
+    setProvider(prov.id);
+    setApiKeyInput('');
+    updateConfig({
+      provider: prov.id,
+      modelName: config.providerModels?.[prov.id]?.[0] || modelName,
+      baseUrl: getEffectiveBase(prov.id),
+    });
+  };
+
+  const handleAddKey = async () => {
     const raw = apiKeyInput.trim();
     if (!raw) return;
     const result = addApiKeys(provider, raw);
     setApiKeyInput('');
-    if (result.duplicates > 0) {
-      setAddKeyMsg(`✓ ${result.total} key(s) total. ${result.duplicates} duplikat di-skip.`);
-    } else {
-      setAddKeyMsg(`✓ Key ditambahkan. Total: ${result.total}`);
-    }
+    setAddKeyMsg(result.duplicates > 0
+      ? `${result.total} key(s) total. ${result.duplicates} duplikat di-skip.`
+      : `Key ditambahkan. Total: ${result.total}`);
     setTimeout(() => setAddKeyMsg(''), 3000);
+
+    // Auto-fetch models after adding key
+    if (result.added > 0) {
+      setFetchingModels(true);
+      setFetchMsg('');
+      try {
+        const models = await fetchAvailableModels(provider, raw, baseUrl || getEffectiveBase(provider));
+        if (models.length) {
+          setModelList(models);
+          saveProviderModels(provider, models);
+          if (!modelName && models[0]) {
+            setModelName(models[0]);
+            updateConfig({ provider, modelName: models[0] });
+          }
+          setFetchMsg(`${models.length} models found`);
+        }
+      } catch (e) {
+        setFetchMsg(`Models: ${e.message}`);
+      } finally {
+        setFetchingModels(false);
+      }
+    }
   };
 
-  const handleModelSelect = (m) => {
-    setModelName(m);
-    updateConfig({ 
-      provider, 
-      modelName: m, 
+  const handleSaveProvider = () => {
+    updateProviderDetails(provider, {
       baseUrl: baseUrl.trim(),
-      customBodyTemplate: customTemplate,
-      customResponsePath: customPath.trim()
+      endpoints: endpointDrafts,
     });
+    updateConfig({ provider, modelName: modelName.trim(), baseUrl: baseUrl.trim() });
+    if (modelList.length) saveProviderModels(provider, modelList);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleFetchModels = async () => {
-    // Save baseUrl before fetching
-    updateConfig({ provider, baseUrl: baseUrl.trim() });
-    const effectiveKey = getEffectiveKey(provider);
-    if (!effectiveKey) { setFetchMsg('⚠ Tambahkan API key terlebih dahulu'); return; }
+  const handleModelSelect = (model) => {
+    setModelName(model);
+    updateConfig({ provider, modelName: model, baseUrl: baseUrl.trim() });
+    if (modelList.length) saveProviderModels(provider, modelList);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+  };
 
-    setFetchingModels(true); setFetchMsg('');
+  const handleFetchModels = async () => {
+    const effectiveKey = getEffectiveKey(provider);
+    if (!effectiveKey) { setFetchMsg('Tambahkan API key terlebih dahulu'); return; }
+    setFetchingModels(true);
+    setFetchMsg('');
     try {
-      const effectiveBase = baseUrl || getEffectiveBase(provider);
-      const models = await fetchAvailableModels(provider, effectiveKey, effectiveBase);
-      if (models.length > 0) {
-        let updatedModels = [...models];
-        let currentActive = modelName;
-        
-        if (currentActive && !updatedModels.includes(currentActive)) {
-          updatedModels.unshift(currentActive);
-        } else if (!currentActive) {
-          currentActive = updatedModels[0];
-        }
-        
-        setModelList(updatedModels);
-        setModelName(currentActive);
-        saveProviderModels(provider, updatedModels);
-        
-        setFetchMsg(`✓ ${models.length} models found`);
-      } else { setFetchMsg('No models found.'); }
-    } catch (e) { setFetchMsg('⚠ ' + e.message); }
-    finally { setFetchingModels(false); }
+      const models = await fetchAvailableModels(provider, effectiveKey, baseUrl || getEffectiveBase(provider));
+      const nextModels = models.length ? models : modelList;
+      setModelList(nextModels);
+      if (!modelName && nextModels[0]) setModelName(nextModels[0]);
+      saveProviderModels(provider, nextModels);
+      setFetchMsg(`${models.length} models found`);
+    } catch (e) {
+      setFetchMsg(e.message);
+    } finally {
+      setFetchingModels(false);
+    }
   };
 
   const handleTest = async () => {
     const effectiveKey = getEffectiveKey(provider);
     if (!effectiveKey) { setTestResult({ ok: false, msg: 'Tambahkan API key terlebih dahulu' }); return; }
-
-    setTesting(true); setTestResult(null);
+    setTesting(true);
+    setTestResult(null);
     try {
-      const effectiveBase = baseUrl || getEffectiveBase(provider);
-      const reply = await testConnection(provider, effectiveKey, effectiveBase, modelName);
+      const reply = await testConnection(provider, effectiveKey, baseUrl || getEffectiveBase(provider), modelName);
       setTestResult({ ok: true, msg: reply });
-    } catch (e) { setTestResult({ ok: false, msg: e.message }); }
-    finally { setTesting(false); }
+    } catch (e) {
+      setTestResult({ ok: false, msg: e.message });
+    } finally {
+      setTesting(false);
+    }
   };
 
-  const handleSave = () => {
-    updateConfig({ 
-      provider, 
-      modelName: modelName.trim(), 
-      baseUrl: baseUrl.trim(),
-      customBodyTemplate: customTemplate,
-      customResponsePath: customPath.trim()
+  const handleAddProvider = () => {
+    if (!newProvider.name.trim()) return;
+    const endpoints = newProvider.type === 'anthropic'
+      ? { messages: '/messages' }
+      : { chat: newProvider.chat || '/chat/completions', models: newProvider.models || '/models' };
+    const providerDef = addProvider({
+      name: newProvider.name.trim(),
+      type: newProvider.type,
+      baseUrl: newProvider.baseUrl.trim(),
+      endpoints,
     });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setProvider(providerDef.id);
+    setShowAddProvider(false);
+    setNewProvider({ name: '', type: 'openai-compatible', baseUrl: '', chat: '/chat/completions', models: '/models' });
   };
+
+  const filteredModels = modelList.filter(model => model.toLowerCase().includes(modSearch.toLowerCase()));
+  const activeTheme = getTheme(activeProvider);
 
   return (
     <div className="stab-section ai-tab-layout">
-
-      {/* ── Left: Provider + Auth ── */}
       <div className="glass-card stab-card">
-        <div className="stab-header">
-          <Bot size={18} />
-          <h2>Provider &amp; Auth</h2>
+        <div className="stab-header ai-provider-header">
+          <div className="stab-header-left">
+            <h2>AI Providers</h2>
+            <span className="stab-header-sub">Add, edit, atau hapus provider tambahan.</span>
+          </div>
+          <button className="btn btn-blue btn-sm" onClick={() => setShowAddProvider(v => !v)}>
+            <Plus size={13} /> Add Provider
+          </button>
         </div>
 
-        {/* Provider card grid */}
-        <div className="form-group">
-          <label className="form-label"><Server size={13} /> AI Provider</label>
-          <div className="ai-prov-grid">
-            {AI_PROVIDERS.map(p => (
-              <button
-                key={p.id}
-                className={`ai-prov-card ${provider === p.id ? 'active' : ''}`}
-                style={{ '--prov-color': p.color, '--prov-grad': p.grad }}
-                onClick={() => handleProviderSelect(p)}
-                title={p.name}
-              >
-                <span className="ai-prov-icon">{p.icon}</span>
-                <span className="ai-prov-name">{p.short}</span>
-                {provider === p.id && <span className="ai-prov-dot" />}
-              </button>
-            ))}
-          </div>
-          {/* Active provider badge */}
-          <div className="ai-active-badge" style={{ '--prov-color': activeProvider.color }}>
-            <span style={{ color: activeProvider.color, display: 'flex' }}>{activeProvider.icon}</span>
-            <span>{activeProvider.name}</span>
-          </div>
-        </div>
-
-        {/* Base URL (non-gemini) */}
-        {provider !== 'gemini' && (
-          <div className="form-group">
-            <label className="form-label"><Link2 size={13} /> {provider === 'custom' ? 'Endpoint URL' : 'API Base URL'}</label>
-            <input className="form-input" type="text" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={AI_PROVIDERS.find(p => p.id === provider)?.defaultBase || 'https://api.example.com/v1'} />
+        {showAddProvider && (
+          <div className="ai-add-provider">
+            <div className="form-group">
+              <label className="form-label"><Server size={13} /> Provider Name</label>
+              <input className="form-input" value={newProvider.name} onChange={e => setNewProvider(p => ({ ...p, name: e.target.value }))} placeholder="Together AI, Local LLM, etc." />
+            </div>
+            <div className="ai-provider-form-grid">
+              <div className="form-group">
+                <label className="form-label"><SettingsIcon size={13} /> Type</label>
+                <select className="form-input" value={newProvider.type} onChange={e => setNewProvider(p => ({ ...p, type: e.target.value }))}>
+                  <option value="openai-compatible">OpenAI Compatible</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label"><Link2 size={13} /> Base URL</label>
+                <input className="form-input" value={newProvider.baseUrl} onChange={e => setNewProvider(p => ({ ...p, baseUrl: e.target.value }))} placeholder="https://api.example.com/v1" />
+              </div>
+            </div>
+            {newProvider.type === 'openai-compatible' && (
+              <div className="ai-provider-form-grid">
+                <div className="form-group">
+                  <label className="form-label"><ArrowRight size={13} /> Chat Endpoint</label>
+                  <input className="form-input" value={newProvider.chat} onChange={e => setNewProvider(p => ({ ...p, chat: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label"><ArrowRight size={13} /> Models Endpoint</label>
+                  <input className="form-input" value={newProvider.models} onChange={e => setNewProvider(p => ({ ...p, models: e.target.value }))} />
+                </div>
+              </div>
+            )}
+            <button className="btn btn-primary" onClick={handleAddProvider} disabled={!newProvider.name.trim()}>
+              <Plus size={14} /> Add
+            </button>
           </div>
         )}
 
-        {/* API Key — Add new key(s) */}
-        <div className="form-group">
-          <label className="form-label">
-            <Key size={13} /> Add API Key
-            {provider === 'gemini' && <span style={{fontSize: '10px', marginLeft: '6px', fontWeight: 'normal', color: 'var(--text-muted)'}}>(bisa satu per satu atau banyak sekaligus)</span>}
-          </label>
-          <div className="pw-field">
-            <input 
-              className="form-input" 
-              type={showKey ? 'text' : 'password'} 
-              value={apiKeyInput} 
-              onChange={e => setApiKeyInput(e.target.value)} 
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddKey(); } }}
-              placeholder={provider === 'gemini' ? 'Paste key baru...' : 'Paste API key...'} 
-            />
-            <button className="pw-eye" onClick={() => setShowKey(!showKey)} title={showKey ? 'Hide' : 'Show'}>
-              {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
-            <button 
-              className="pw-eye" 
-              onClick={handleAddKey} 
-              disabled={!apiKeyInput.trim()}
-              title="Tambah key"
-              style={{color: apiKeyInput.trim() ? 'var(--accent-green)' : 'var(--text-muted)'}}
-            >
-              <Plus size={14} />
-            </button>
-          </div>
-          {addKeyMsg && (
-            <p style={{fontSize: '10px', color: 'var(--accent-green)', marginTop: '4px'}}>{addKeyMsg}</p>
-          )}
-
-          {/* Stored Keys List */}
-          {hasKeys && (
-            <div style={{marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '4px'}}>
-              <span style={{fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '4px'}}>
-                <CheckCircle size={10} style={{color: 'var(--accent-green)'}}/> 
-                Saved Keys ({storedKeys.length})
-              </span>
-              {storedKeys.map((k, idx) => (
-                <div key={idx} style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '6px', padding: '6px 10px', fontSize: '12px',
-                }}>
-                  <span style={{
-                    flex: 1, fontFamily: 'monospace', fontSize: '11px', color: 'var(--text-secondary)',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {storedKeys.length > 1 && <span style={{color: 'var(--text-muted)', marginRight: '6px', fontWeight: 600}}>#{idx + 1}</span>}
-                    {showKey ? k : `${'•'.repeat(Math.max(0, k.length - 8))}${k.slice(-8)}`}
-                  </span>
-                  <button 
-                    onClick={() => {
-                      if (!confirm(`Hapus key ${storedKeys.length > 1 ? `#${idx + 1} ` : ''}(…${k.slice(-8)})?`)) return;
-                      deleteApiKey(provider, k);
+        <div className="ai-prov-grid dynamic">
+          {providers.map(item => {
+            const theme = getTheme(item);
+            const hasKey = !!(getEffectiveKey(item.id) || '').split(/[,\n]+/).map(k => k.trim()).filter(Boolean).length;
+            return (
+              <button
+                key={item.id}
+                className={`ai-prov-card ${provider === item.id ? 'active' : ''} ${hasKey ? 'has-key' : ''}`}
+                style={{ '--prov-color': theme.color }}
+                onClick={() => handleProviderSelect(item)}
+                title={item.name}
+              >
+                <span className="ai-prov-icon">{theme.icon}</span>
+                <span className="ai-prov-name">{item.short || item.name}</span>
+                {hasKey && provider !== item.id && <span className="ai-prov-key-dot" />}
+                {!item.system && (
+                  <span
+                    className="ai-prov-remove"
+                    title="Delete provider"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Hapus provider ${item.name}?`)) deleteProvider(item.id);
                     }}
-                    title="Hapus key ini"
-                    style={{
-                      background: 'none', border: 'none', cursor: 'pointer', padding: '2px',
-                      color: 'var(--text-muted)', transition: 'color 0.15s',
-                      display: 'flex', alignItems: 'center',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
                   >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                    <Trash2 size={11} />
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Custom JSON Templating */}
-        {provider === 'custom' && (
+        {activeProvider && (
           <>
-            <div className="form-group">
-              <label className="form-label"><Code size={13} /> JSON Body Template</label>
-              <textarea 
-                className="form-input" 
-                style={{ fontFamily: 'monospace', minHeight: '80px', fontSize: '11px', whiteSpace: 'pre' }} 
-                value={customTemplate} 
-                onChange={e => setCustomTemplate(e.target.value)} 
-                placeholder={`{\n  "messages": [\n    { "role": "user", "content": "{{PROMPT}}" }\n  ],\n  "model": "{{MODEL}}"\n}`} 
-              />
-              <p className="ai-fetch-msg" style={{color: 'var(--text-muted)'}}>Use <code>{`{{PROMPT}}`}</code> and <code>{`{{MODEL}}`}</code> as placeholders.</p>
+            <div className="ai-active-badge" style={{ '--prov-color': activeTheme.color }}>
+              <span style={{ color: activeTheme.color, display: 'flex' }}>{activeTheme.icon}</span>
+              <span>{activeProvider.name}</span>
+              <span className="ai-capability-badge">{(activeProvider.capabilities || []).join(' / ')}</span>
             </div>
+
+            {activeProvider.type !== 'gemini' && (
+              <div className="form-group">
+                <label className="form-label"><Link2 size={13} /> Base URL</label>
+                <input className="form-input" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder={activeProvider.baseUrl || 'https://api.example.com/v1'} />
+              </div>
+            )}
+
+            {endpointFields.length > 0 && (
+              <div className="ai-endpoint-grid">
+                {endpointFields.map(field => (
+                  <div className="form-group" key={field.key}>
+                    <label className="form-label"><ArrowRight size={13} /> {field.label}</label>
+                    <input
+                      className="form-input"
+                      value={endpointDrafts[field.key] || ''}
+                      onChange={e => setEndpointDrafts(prev => ({ ...prev, [field.key]: e.target.value }))}
+                      placeholder={field.placeholder}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="form-group">
-              <label className="form-label"><ArrowRight size={13} /> Response Extraction Path</label>
-              <input 
-                className="form-input" 
-                type="text" 
-                value={customPath} 
-                onChange={e => setCustomPath(e.target.value)} 
-                placeholder="choices[0].message.content" 
-                style={{ fontFamily: 'monospace', fontSize: '11px' }}
-              />
+              <label className="form-label"><Key size={13} /> Add API Key</label>
+              <div className="pw-field ai-key-field">
+                <input
+                  className="form-input"
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKeyInput}
+                  onChange={e => setApiKeyInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddKey(); } }}
+                  placeholder="Paste API key baru"
+                />
+                <button className="pw-eye" onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide' : 'Show'}>
+                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button className="pw-eye ai-key-add" onClick={handleAddKey} disabled={!apiKeyInput.trim()} title="Tambah key">
+                  <Plus size={14} />
+                </button>
+              </div>
+              {addKeyMsg && <p className="ai-fetch-msg ok">{addKeyMsg}</p>}
+              {hasKeys && (
+                <div className="ai-saved-keys">
+                  <span className="ai-saved-keys-title"><CheckCircle size={10} /> Saved Keys ({storedKeys.length})</span>
+                  {storedKeys.map((key, idx) => (
+                    <div key={`${key}-${idx}`} className="ai-saved-key-row">
+                      <span>{showKey ? key : `${'*'.repeat(Math.max(0, key.length - 8))}${key.slice(-8)}`}</span>
+                      <button onClick={() => deleteApiKey(provider, key)} title="Hapus key ini"><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
+
+            <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSaveProvider}>
+              {saved ? <><Check size={14} /> Saved!</> : <><Save size={14} /> Save Provider</>}
+            </button>
           </>
         )}
-
-        <button className={`btn ${saved ? 'btn-green' : 'btn-primary'} stab-save-btn`} onClick={handleSave}>
-          {saved ? <><Check size={14} /> Saved!</> : <><Save size={14} /> Save Configuration</>}
-        </button>
       </div>
 
-      {/* ── Right: Model + Test ── */}
       <div className="glass-card stab-card">
         <div className="stab-header">
           <BrainCircuit size={18} />
           <h2>Model &amp; Test</h2>
         </div>
 
-        {/* Model section */}
-        <div className="form-group">
-          <div className="ai-model-label-row">
-            <label className="form-label" style={{ margin: 0 }}><BrainCircuit size={13} /> Model</label>
-            {provider !== 'custom' && provider !== 'devin' && (
-              <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !hasKeys} title="Fetch latest models from API">
-                <RefreshCw size={12} className={fetchingModels ? 'spin' : ''} />
-                {fetchingModels ? 'Fetching...' : 'Update List'}
-              </button>
-            )}
-          </div>
-
-          {/* Search */}
-          {provider !== 'custom' && provider !== 'devin' && (
-            <div className="ai-model-search">
-              <Search size={13} />
-              <input type="text" placeholder="Search models..." value={modSearch} onChange={e => setModSearch(e.target.value)} />
-            </div>
-          )}
-
-          {fetchMsg && (
-            <p className={`ai-fetch-msg ${fetchMsg.startsWith('⚠') ? 'err' : 'ok'}`}>{fetchMsg}</p>
-          )}
-
-          {/* Model list / custom input */}
-          {provider === 'custom' || provider === 'devin' ? (
-            <input className="form-input" style={{ marginTop: '8px' }} type="text" value={modelName} onChange={e => setModelName(e.target.value)} placeholder={provider === 'devin' ? "devin-session" : "model-name"} disabled={provider === 'devin'} />
-          ) : (
-            <div className="ai-model-list">
-              {filteredModels.length === 0
-                ? <div className="ai-model-empty">No models found.</div>
-                : filteredModels.map(m => (
+        {activeProvider && (activeProvider.capabilities || []).includes('text') ? (
+          <>
+            <div className="form-group">
+              <div className="ai-model-label-row">
+                <label className="form-label" style={{ margin: 0 }}><BrainCircuit size={13} /> Model</label>
+                <button className="ai-fetch-btn" onClick={handleFetchModels} disabled={fetchingModels || !hasKeys}>
+                  <RefreshCw size={12} className={fetchingModels ? 'spin' : ''} />
+                  {fetchingModels ? 'Fetching...' : 'Update List'}
+                </button>
+              </div>
+              <div className="ai-model-search">
+                <Search size={13} />
+                <input type="text" placeholder="Search models..." value={modSearch} onChange={e => setModSearch(e.target.value)} />
+              </div>
+              {fetchMsg && <p className={`ai-fetch-msg ${fetchMsg.toLowerCase().includes('error') || fetchMsg.toLowerCase().includes('gagal') ? 'err' : 'ok'}`}>{fetchMsg}</p>}
+              <div className="ai-model-list">
+                {filteredModels.length === 0 ? (
+                  <div className="ai-model-empty">Model list kosong. Isi manual atau update list.</div>
+                ) : filteredModels.map(model => (
                   <button
                     type="button"
-                    key={m}
-                    className={`ai-model-item ${modelName === m ? 'active' : ''}`}
-                    onClick={() => handleModelSelect(m)}
-                    style={modelName === m ? { '--prov-color': activeProvider.color } : {}}
+                    key={model}
+                    className={`ai-model-item ${modelName === model ? 'active' : ''}`}
+                    onClick={() => handleModelSelect(model)}
+                    style={modelName === model ? { '--prov-color': activeTheme.color } : {}}
                   >
-                    <span className="ai-model-name">{m}</span>
-                    {modelName === m && <CheckCircle size={13} style={{ color: activeProvider.color, flexShrink: 0 }} />}
+                    <span className="ai-model-name">{model}</span>
+                    {modelName === model && <CheckCircle size={13} style={{ color: activeTheme.color, flexShrink: 0 }} />}
                   </button>
-                ))
-              }
+                ))}
+              </div>
+              <input className="form-input ai-manual-model" value={modelName} onChange={e => setModelName(e.target.value)} placeholder="model-name" />
             </div>
-          )}
-        </div>
-
-        {/* Selected model display */}
-        {modelName && provider !== 'custom' && provider !== 'devin' && (
-          <div className="ai-selected-model" style={{ '--prov-color': activeProvider.color }}>
-            <BrainCircuit size={13} />
-            <span>Active: <strong>{modelName}</strong></span>
+          </>
+        ) : (
+          <div className="ai-media-provider-note">
+            <Sparkles size={18} />
+            <span>Provider ini dipakai oleh tab Generate Image/Video.</span>
           </div>
         )}
 
-        {/* Test connection */}
         <div className="form-group" style={{ marginTop: '16px' }}>
           <label className="form-label"><Wifi size={13} /> Test Connection</label>
-          <button
-            className="ai-test-btn"
-            onClick={handleTest}
-            disabled={testing || !hasKeys || !modelName}
-          >
-            {testing
-              ? <><RefreshCw size={14} className="spin" /> Testing connection...</>
-              : <><Wifi size={14} /> Run Test</>}
+          <button className="ai-test-btn" onClick={handleTest} disabled={testing || !hasKeys}>
+            {testing ? <><RefreshCw size={14} className="spin" /> Testing connection...</> : <><Wifi size={14} /> Run Test</>}
           </button>
           {testResult && (
             <div className={`ai-test-result ${testResult.ok ? 'ok' : 'err'}`}>
               {testResult.ok ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
-              <span style={{whiteSpace: 'pre-wrap'}}>{testResult.msg}</span>
+              <span style={{ whiteSpace: 'pre-wrap' }}>{testResult.msg}</span>
             </div>
           )}
         </div>
@@ -929,4 +1047,3 @@ function AITab() {
     </div>
   );
 }
-

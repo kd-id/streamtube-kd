@@ -1,10 +1,8 @@
-import { useReducer, useEffect, useRef, useCallback, useState } from 'react';
+import { useReducer, useEffect, useRef, useCallback } from 'react';
 
-// ── Session Cache ────────────────────────────────────────────
 const _aiCache = new Map();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — auto-clear for fresh results
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
-// Auto-purge expired cache entries every 5 minutes
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of _aiCache) {
@@ -15,25 +13,29 @@ setInterval(() => {
 function getCacheKey(...parts) {
   return parts.map(p => String(p || '').toLowerCase().trim()).join('|');
 }
+
 function getFromCache(key) {
   const hit = _aiCache.get(key);
   if (!hit) return null;
-  if (Date.now() - hit.ts > CACHE_TTL_MS) { _aiCache.delete(key); return null; }
+  if (Date.now() - hit.ts > CACHE_TTL_MS) {
+    _aiCache.delete(key);
+    return null;
+  }
   return hit.data;
 }
+
 function setToCache(key, data) {
   _aiCache.set(key, { data, ts: Date.now() });
-  if (_aiCache.size > 50) { _aiCache.delete(_aiCache.keys().next().value); }
+  if (_aiCache.size > 50) _aiCache.delete(_aiCache.keys().next().value);
 }
 
-// ── Per-User Rate Limiter ────────────────────────────────────
 const MAX_REQUESTS_PER_HOUR = 15;
-const _requestLog = []; // timestamps
+const _requestLog = [];
 
 function checkRateLimit() {
   const now = Date.now();
   const oneHourAgo = now - 60 * 60 * 1000;
-  while (_requestLog.length > 0 && _requestLog[0] < oneHourAgo) { _requestLog.shift(); }
+  while (_requestLog.length > 0 && _requestLog[0] < oneHourAgo) _requestLog.shift();
   if (_requestLog.length >= MAX_REQUESTS_PER_HOUR) {
     const nextSlot = new Date(_requestLog[0] + 60 * 60 * 1000);
     throw new Error(`Rate limit reached (${MAX_REQUESTS_PER_HOUR}/hour). Try again after ${nextSlot.toLocaleTimeString()}.`);
@@ -43,33 +45,124 @@ function checkRateLimit() {
 
 function getRemainingRequests() {
   const oneHourAgo = Date.now() - 60 * 60 * 1000;
-  while (_requestLog.length > 0 && _requestLog[0] < oneHourAgo) { _requestLog.shift(); }
+  while (_requestLog.length > 0 && _requestLog[0] < oneHourAgo) _requestLog.shift();
   return MAX_REQUESTS_PER_HOUR - _requestLog.length;
 }
 
-// ── Provider Base URL Defaults ───────────────────────────────
-const PROVIDER_BASE_URLS = {
-  gemini:     '', // Uses special URL pattern
-  openai:     'https://api.openai.com/v1',
-  anthropic:  'https://api.anthropic.com/v1',
-  grok:       'https://api.x.ai/v1',
-  groq:       'https://api.groq.com/openai/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  devin:      'https://api.devin.ai/v1',
-  custom:     '',
-};
-
-// ── Cross-Provider Cascade Order (free/cheap first) ──────────
-const CASCADE_ORDER = ['gemini', 'groq', 'openrouter', 'grok', 'openai', 'anthropic'];
-
-// ── Max tokens per request type ──────────────────────────────
 const MAX_TOKENS = {
-  generate: 2048,      // single field (description can be 300+ words)
-  generateAll: 3000,   // combined title + description + tags
-  test: 20,            // connection test
+  generate: 2048,
+  generateAll: 3000,
+  test: 20,
 };
 
-// ── State ────────────────────────────────────────────────────
+export const DEFAULT_AI_PROVIDERS = [
+  {
+    id: 'gemini',
+    name: 'Google Gemini',
+    short: 'Gemini',
+    type: 'gemini',
+    system: true,
+    capabilities: ['text'],
+    baseUrl: '',
+    endpoints: { models: '', chat: '' },
+  },
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    short: 'OpenAI',
+    type: 'openai-compatible',
+    system: true,
+    capabilities: ['text'],
+    baseUrl: 'https://api.openai.com/v1',
+    endpoints: { models: '/models', chat: '/chat/completions' },
+  },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    short: 'Claude',
+    type: 'anthropic',
+    system: true,
+    capabilities: ['text'],
+    baseUrl: 'https://api.anthropic.com/v1',
+    endpoints: { messages: '/messages' },
+  },
+  {
+    id: 'grok',
+    name: 'xAI Grok',
+    short: 'Grok',
+    type: 'openai-compatible',
+    system: true,
+    capabilities: ['text'],
+    baseUrl: 'https://api.x.ai/v1',
+    endpoints: { models: '/models', chat: '/chat/completions' },
+  },
+  {
+    id: 'groq',
+    name: 'Groq',
+    short: 'Groq',
+    type: 'openai-compatible',
+    system: true,
+    capabilities: ['text'],
+    baseUrl: 'https://api.groq.com/openai/v1',
+    endpoints: { models: '/models', chat: '/chat/completions' },
+  },
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    short: 'Router',
+    type: 'openai-compatible',
+    system: true,
+    capabilities: ['text'],
+    baseUrl: 'https://openrouter.ai/api/v1',
+    endpoints: { models: '/models', chat: '/chat/completions' },
+  },
+  {
+    id: 'devin',
+    name: 'Devin.ai',
+    short: 'Devin',
+    type: 'devin',
+    system: true,
+    capabilities: ['agent'],
+    baseUrl: 'https://api.devin.ai/v1',
+    endpoints: { sessions: '/sessions' },
+  },
+  {
+    id: 'leonardo',
+    name: 'Leonardo.Ai',
+    short: 'Leonardo',
+    type: 'leonardo',
+    system: true,
+    capabilities: ['image', 'video'],
+    baseUrl: 'https://cloud.leonardo.ai/api/rest',
+    endpoints: {
+      image: '/v2/generations',
+      imageLegacy: '/v1/generations',
+      video: '/v2/generations',
+      videoImage: '/v1/generations-image-to-video',
+      status: '/v1/generations/{{id}}',
+    },
+  },
+];
+
+const DEFAULT_MODEL_MAP = {
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+  openai: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+  anthropic: ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-3-haiku-20240307'],
+  grok: ['grok-3', 'grok-3-mini', 'grok-2', 'grok-2-mini'],
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it', 'mixtral-8x7b-32768'],
+  openrouter: ['google/gemini-2.5-flash', 'google/gemini-2.5-pro', 'openai/gpt-4o', 'anthropic/claude-3-opus', 'meta-llama/llama-3-70b-instruct'],
+  devin: ['devin-session'],
+  leonardo: [
+    'gpt-image-2', 'gpt-image-1.5', 'gemini-2.5-flash-image', 'gemini-image-2',
+    'nano-banana-2', 'seedream-4.5', 'flux-pro-2.0', 'hailuo-2_3',
+    'kling-3.0', 'kling-video-o-3', 'ltxv-2.3-pro', 'seedance-1.0-pro',
+    'VEO3', 'VEO3_1', 'KLING2_5', 'KLING2_1',
+  ],
+};
+
+const DEFAULT_TEXT_CASCADE = ['gemini', 'groq', 'openrouter', 'grok', 'openai', 'anthropic'];
+const DEFAULT_IDS = new Set(DEFAULT_AI_PROVIDERS.map(p => p.id));
+
 const initialState = {
   provider: 'gemini',
   apiKey: '',
@@ -77,37 +170,123 @@ const initialState = {
   baseUrl: '',
   apiKeys: {},
   baseUrls: {},
+  providerEndpoints: {},
   providerModels: {},
-  customBodyTemplate: '{\n  "messages": [\n    { "role": "user", "content": "{{PROMPT}}" }\n  ],\n  "model": "{{MODEL}}"\n}',
-  customResponsePath: 'choices[0].message.content',
+  providers: cloneProviders(DEFAULT_AI_PROVIDERS),
 };
+
+function cloneProviders(providers) {
+  return providers.map(provider => ({
+    ...provider,
+    capabilities: [...(provider.capabilities || [])],
+    endpoints: { ...(provider.endpoints || {}) },
+  }));
+}
 
 function sanitizeModel(name) {
   if (!name) return '';
-  return name.replace(/^models\//, '').trim();
+  return String(name).replace(/^models\//, '').trim();
+}
+
+function slugifyProviderName(name) {
+  const base = String(name || 'provider').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return base || 'provider';
+}
+
+function makeProviderId(name, existingIds) {
+  const base = slugifyProviderName(name);
+  let id = base;
+  let idx = 2;
+  while (existingIds.has(id)) {
+    id = `${base}-${idx}`;
+    idx += 1;
+  }
+  return id;
+}
+
+function defaultCapabilitiesForType(type) {
+  if (type === 'leonardo') return ['image', 'video'];
+  if (type === 'devin') return ['agent'];
+  return ['text'];
+}
+
+function defaultEndpointsForType(type) {
+  if (type === 'anthropic') return { messages: '/messages' };
+  if (type === 'devin') return { sessions: '/sessions' };
+  if (type === 'leonardo') {
+    return {
+      image: '/v2/generations',
+      imageLegacy: '/v1/generations',
+      video: '/v2/generations',
+      videoImage: '/v1/generations-image-to-video',
+      status: '/v1/generations/{{id}}',
+    };
+  }
+  return { models: '/models', chat: '/chat/completions' };
+}
+
+function normalizeProvider(provider) {
+  const type = provider.type || 'openai-compatible';
+  return {
+    id: provider.id,
+    name: provider.name || provider.short || provider.id,
+    short: provider.short || provider.name || provider.id,
+    type,
+    system: !!provider.system,
+    capabilities: Array.isArray(provider.capabilities) && provider.capabilities.length ? provider.capabilities : defaultCapabilitiesForType(type),
+    baseUrl: provider.baseUrl || '',
+    endpoints: { ...defaultEndpointsForType(type), ...(provider.endpoints || {}) },
+  };
+}
+
+function mergeProviders(savedProviders, savedConfig = {}) {
+  const defaults = cloneProviders(DEFAULT_AI_PROVIDERS);
+  const saved = Array.isArray(savedProviders) ? savedProviders : [];
+  const customProviders = saved
+    .filter(provider => provider?.id && !DEFAULT_IDS.has(provider.id) && provider.id !== 'custom')
+    .map(provider => normalizeProvider(provider));
+
+  if ((savedConfig?.apiKeys?.custom || savedConfig?.baseUrls?.custom) && !customProviders.some(p => p.id === 'custom-provider')) {
+    customProviders.push(normalizeProvider({
+      id: 'custom-provider',
+      name: 'Custom Provider',
+      short: 'Custom',
+      type: 'openai-compatible',
+      baseUrl: savedConfig?.baseUrls?.custom || '',
+    }));
+  }
+
+  return [...defaults, ...customProviders];
+}
+
+function providerHas(provider, capability) {
+  return (provider?.capabilities || []).includes(capability);
 }
 
 function reducer(state, action) {
   switch (action.type) {
-    case 'UPDATE_CONFIG': return { ...state, ...action.payload };
-    default: return state;
+    case 'UPDATE_CONFIG':
+      return { ...state, ...action.payload };
+    default:
+      return state;
   }
 }
 
-function getNestedValue(obj, path) {
-  if (!path || !obj) return obj;
-  try {
-    const keys = path.replace(/\[(\w+)\]/g, '.$1').replace(/^\./, '').split('.');
-    let result = obj;
-    for (const key of keys) {
-      if (result && typeof result === 'object' && key in result) { result = result[key]; }
-      else { return undefined; }
-    }
-    return result;
-  } catch (e) { return undefined; }
+function getProviderFromState(state, provId) {
+  return (state.providers || []).find(p => p.id === provId) || DEFAULT_AI_PROVIDERS.find(p => p.id === provId) || null;
 }
 
-// ── Hook ─────────────────────────────────────────────────────
+function joinEndpoint(base, endpoint) {
+  const cleanBase = String(base || '').replace(/\/+$/, '');
+  const cleanEndpoint = String(endpoint || '').trim();
+  if (!cleanEndpoint) return cleanBase;
+  if (/^https?:\/\//i.test(cleanEndpoint)) return cleanEndpoint;
+  if (!cleanBase) return cleanEndpoint;
+  // If base already ends with the endpoint (e.g. user put full URL in base), skip
+  if (cleanBase.endsWith(cleanEndpoint)) return cleanBase;
+  return `${cleanBase}/${cleanEndpoint.replace(/^\/+/, '')}`;
+}
+
 export function useAIStore() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const stateRef = useRef(state);
@@ -115,7 +294,6 @@ export function useAIStore() {
 
   const getToken = () => localStorage.getItem('streamtube_token');
 
-  // Initialize from API
   useEffect(() => {
     const init = async () => {
       const token = getToken();
@@ -125,24 +303,19 @@ export function useAIStore() {
         const data = await res.json();
         if (data.success && data.data) {
           const saved = data.data;
-          const initialApiKeys = { ...saved.apiKeys };
-          const initialBaseUrls = { ...saved.baseUrls };
-          
-          if (saved.apiKey && !initialApiKeys[saved.provider || 'gemini']) {
-            initialApiKeys[saved.provider || 'gemini'] = saved.apiKey;
-          }
+          const initialApiKeys = { ...(saved.apiKeys || {}) };
+          const initialBaseUrls = { ...(saved.baseUrls || {}) };
+          const providers = mergeProviders(saved.providers, saved);
+          const provider = saved.provider && saved.provider !== 'custom' ? saved.provider : 'gemini';
 
-          const allDefaults = Object.values(PROVIDER_BASE_URLS).filter(Boolean);
-          for (const provId of Object.keys(initialBaseUrls)) {
-            const url = (initialBaseUrls[provId] || '').replace(/\/+$/, '');
-            const correctDefault = (PROVIDER_BASE_URLS[provId] || '').replace(/\/+$/, '');
-            if (!url) continue;
-            if (url !== correctDefault && allDefaults.some(d => d.replace(/\/+$/, '') === url)) {
-              delete initialBaseUrls[provId];
-            }
-            if (url === correctDefault) {
-              delete initialBaseUrls[provId];
-            }
+          if (saved.apiKey && !initialApiKeys[provider]) initialApiKeys[provider] = saved.apiKey;
+          if (initialApiKeys.custom && !initialApiKeys['custom-provider']) {
+            initialApiKeys['custom-provider'] = initialApiKeys.custom;
+            delete initialApiKeys.custom;
+          }
+          if (initialBaseUrls.custom && !initialBaseUrls['custom-provider']) {
+            initialBaseUrls['custom-provider'] = initialBaseUrls.custom;
+            delete initialBaseUrls.custom;
           }
 
           dispatch({
@@ -150,13 +323,16 @@ export function useAIStore() {
             payload: {
               ...initialState,
               ...saved,
+              provider,
               apiKey: '',
               baseUrl: '',
               apiKeys: initialApiKeys,
               baseUrls: initialBaseUrls,
+              providerEndpoints: saved.providerEndpoints || {},
               providerModels: saved.providerModels || {},
+              providers,
               modelName: sanitizeModel(saved.modelName || initialState.modelName),
-            }
+            },
           });
         }
       } catch {}
@@ -166,51 +342,153 @@ export function useAIStore() {
 
   const saveConfig = (cfg) => {
     const token = getToken();
-    if (token && cfg) {
-      fetch('/api/settings/ai_config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(cfg)
-      }).catch(() => {});
-    }
+    if (!token || !cfg) return;
+    fetch('/api/settings/ai_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ...cfg, apiKey: '', baseUrl: '' }),
+    }).catch(() => {});
   };
 
+  const getEffectiveKey = useCallback((prov) => {
+    return stateRef.current.apiKeys?.[prov] || '';
+  }, []);
+
+  const getEffectiveBase = useCallback((prov) => {
+    const cur = stateRef.current;
+    const provider = getProviderFromState(cur, prov);
+    return cur.baseUrls?.[prov] || provider?.baseUrl || '';
+  }, []);
+
+  const getEffectiveEndpoint = useCallback((prov, endpointName) => {
+    const cur = stateRef.current;
+    const provider = getProviderFromState(cur, prov);
+    return cur.providerEndpoints?.[prov]?.[endpointName] || provider?.endpoints?.[endpointName] || '';
+  }, []);
+
   const updateConfig = (updates) => {
-    let newApiKeys = { ...state.apiKeys };
-    let newBaseUrls = { ...state.baseUrls };
-    const targetProv = updates.provider || state.provider;
-    
+    const cur = stateRef.current;
+    let newApiKeys = { ...cur.apiKeys };
+    let newBaseUrls = { ...cur.baseUrls };
+    const targetProv = updates.provider || cur.provider;
+    const provider = getProviderFromState(cur, targetProv);
+
     if (updates.apiKey !== undefined) {
-      if (updates.apiKey.trim()) {
-        newApiKeys[targetProv] = updates.apiKey.trim();
-      } else {
-        delete newApiKeys[targetProv];
-      }
+      if (String(updates.apiKey).trim()) newApiKeys[targetProv] = String(updates.apiKey).trim();
+      else delete newApiKeys[targetProv];
     }
-    
+
     if (updates.baseUrl !== undefined) {
-      const defaultUrl = (PROVIDER_BASE_URLS[targetProv] || '').replace(/\/+$/, '');
-      const userUrl = (updates.baseUrl || '').replace(/\/+$/, '').trim();
-      if (userUrl && userUrl !== defaultUrl) {
-        newBaseUrls[targetProv] = userUrl;
-      } else {
-        delete newBaseUrls[targetProv];
-      }
+      const defaultUrl = (provider?.baseUrl || '').replace(/\/+$/, '');
+      const userUrl = String(updates.baseUrl || '').replace(/\/+$/, '').trim();
+      if (userUrl && userUrl !== defaultUrl) newBaseUrls[targetProv] = userUrl;
+      else delete newBaseUrls[targetProv];
     }
-    
+
     const nextState = {
-      ...state,
+      ...cur,
       ...updates,
       apiKey: '',
       baseUrl: '',
       apiKeys: newApiKeys,
       baseUrls: newBaseUrls,
-      providerModels: state.providerModels,
-      modelName: updates.modelName ? sanitizeModel(updates.modelName) : state.modelName,
+      modelName: updates.modelName !== undefined ? sanitizeModel(updates.modelName) : cur.modelName,
     };
 
     dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
     saveConfig(nextState);
+  };
+
+  const updateProviderDetails = (provId, details) => {
+    const cur = stateRef.current;
+    const provider = getProviderFromState(cur, provId);
+    if (!provider) return { success: false, error: 'Provider not found' };
+
+    const endpoints = { ...(provider.endpoints || {}), ...(details.endpoints || {}) };
+    const providers = cur.providers.map(p => (
+      p.id === provId
+        ? normalizeProvider({
+            ...p,
+            name: details.name ?? p.name,
+            short: details.short ?? p.short,
+            type: details.type ?? p.type,
+            baseUrl: details.baseUrl ?? p.baseUrl,
+            endpoints,
+          })
+        : p
+    ));
+
+    const providerEndpoints = { ...cur.providerEndpoints, [provId]: endpoints };
+    const baseUrls = { ...cur.baseUrls };
+    const nextBase = String(details.baseUrl ?? provider.baseUrl ?? '').replace(/\/+$/, '').trim();
+    const defaultBase = (DEFAULT_AI_PROVIDERS.find(p => p.id === provId)?.baseUrl || '').replace(/\/+$/, '');
+    if (nextBase && nextBase !== defaultBase) baseUrls[provId] = nextBase;
+    else delete baseUrls[provId];
+
+    const nextState = { ...cur, providers, providerEndpoints, baseUrls };
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
+    saveConfig(nextState);
+    return { success: true };
+  };
+
+  const addProvider = (details) => {
+    const cur = stateRef.current;
+    const existingIds = new Set((cur.providers || []).map(p => p.id));
+    const id = makeProviderId(details.name || 'Provider', existingIds);
+    const provider = normalizeProvider({
+      id,
+      name: details.name || 'New Provider',
+      short: details.short || details.name || 'Provider',
+      type: details.type || 'openai-compatible',
+      system: false,
+      baseUrl: details.baseUrl || '',
+      endpoints: { ...defaultEndpointsForType(details.type || 'openai-compatible'), ...(details.endpoints || {}) },
+    });
+    const providers = [...cur.providers, provider];
+    const nextProvider = providerHas(provider, 'text') ? id : cur.provider;
+    const nextModel = providerHas(provider, 'text') ? (DEFAULT_MODEL_MAP[id]?.[0] || details.modelName || '') : cur.modelName;
+    const nextState = {
+      ...cur,
+      providers,
+      provider: nextProvider,
+      modelName: nextModel,
+      providerModels: { ...cur.providerModels, [id]: details.modelName ? [details.modelName] : [] },
+    };
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
+    saveConfig(nextState);
+    return provider;
+  };
+
+  const deleteProvider = (provId) => {
+    const cur = stateRef.current;
+    const provider = getProviderFromState(cur, provId);
+    if (!provider) return { success: false, error: 'Provider not found' };
+    if (provider.system) return { success: false, error: 'Provider bawaan tidak bisa dihapus' };
+
+    const providers = cur.providers.filter(p => p.id !== provId);
+    const apiKeys = { ...cur.apiKeys };
+    const baseUrls = { ...cur.baseUrls };
+    const providerEndpoints = { ...cur.providerEndpoints };
+    const providerModels = { ...cur.providerModels };
+    delete apiKeys[provId];
+    delete baseUrls[provId];
+    delete providerEndpoints[provId];
+    delete providerModels[provId];
+
+    const fallback = providers.find(p => providerHas(p, 'text'))?.id || 'gemini';
+    const nextState = {
+      ...cur,
+      providers,
+      apiKeys,
+      baseUrls,
+      providerEndpoints,
+      providerModels,
+      provider: cur.provider === provId ? fallback : cur.provider,
+      modelName: cur.provider === provId ? (providerModels[fallback]?.[0] || DEFAULT_MODEL_MAP[fallback]?.[0] || '') : cur.modelName,
+    };
+    dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
+    saveConfig(nextState);
+    return { success: true };
   };
 
   const saveProviderModels = (provId, models) => {
@@ -221,116 +499,104 @@ export function useAIStore() {
     saveConfig(nextState);
   };
 
-  // ── Delete API Key for a specific provider ─────────────────
   const deleteApiKey = (provId, singleKey) => {
-    const prov = provId || state.provider;
+    const prov = provId || stateRef.current.provider;
     const newApiKeys = { ...stateRef.current.apiKeys };
-    
     if (singleKey && newApiKeys[prov]) {
-      // Remove only the specific key from the comma-separated list
       const keys = newApiKeys[prov].split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
       const filtered = keys.filter(k => k !== singleKey.trim());
-      if (filtered.length > 0) {
-        newApiKeys[prov] = filtered.join(', ');
-      } else {
-        delete newApiKeys[prov];
-      }
+      if (filtered.length > 0) newApiKeys[prov] = filtered.join(', ');
+      else delete newApiKeys[prov];
     } else {
       delete newApiKeys[prov];
     }
-    
-    const nextState = {
-      ...stateRef.current,
-      apiKey: '',
-      apiKeys: newApiKeys,
-    };
+    const nextState = { ...stateRef.current, apiKey: '', apiKeys: newApiKeys };
     dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
     saveConfig(nextState);
   };
 
-  // ── Key / URL helpers (provider-isolated) ──────────────────
-  const getEffectiveKey = (prov) => state.apiKeys[prov] || '';
-  const getEffectiveBase = (prov) => state.baseUrls[prov] || PROVIDER_BASE_URLS[prov] || '';
-
-  // ── Add API Keys (append + deduplicate) ───────────────────
   const addApiKeys = (provId, newKeysRaw) => {
-    const prov = provId || state.provider;
+    const prov = provId || stateRef.current.provider;
     const newApiKeys = { ...stateRef.current.apiKeys };
     const existingKeys = (newApiKeys[prov] || '').split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
-    const incomingKeys = newKeysRaw.split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
-    // Deduplicate: merge and keep unique
+    const incomingKeys = String(newKeysRaw || '').split(/[,\n]+/).map(k => k.trim()).filter(Boolean);
     const merged = Array.from(new Set([...existingKeys, ...incomingKeys]));
-    if (merged.length > 0) {
-      newApiKeys[prov] = merged.join(', ');
-    }
-    const nextState = {
-      ...stateRef.current,
-      apiKey: '',
-      apiKeys: newApiKeys,
-    };
+    if (merged.length > 0) newApiKeys[prov] = merged.join(', ');
+    const nextState = { ...stateRef.current, apiKey: '', apiKeys: newApiKeys };
     dispatch({ type: 'UPDATE_CONFIG', payload: nextState });
     saveConfig(nextState);
     return { added: incomingKeys.length, duplicates: incomingKeys.length - (merged.length - existingKeys.length), total: merged.length };
   };
 
-  // ── Fetch Available Models ─────────────────────────────────
   const fetchAvailableModels = useCallback(async (prov, rawKey, base) => {
     if (!rawKey) throw new Error('API key required');
-    if (prov === 'gemini') {
+    const cur = stateRef.current;
+    const provider = getProviderFromState(cur, prov);
+    if (!provider) throw new Error('Provider not found');
+
+    if (provider.type === 'gemini') {
       const keys = Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)));
-      for (let i = 0; i < keys.length; i++) {
+      for (let i = 0; i < keys.length; i += 1) {
         try {
           const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${keys[i]}`);
           const data = await res.json();
           if (data.error) throw new Error(data.error.message);
-          return (data.models || []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => m.name.replace('models/', ''));
+          return (data.models || [])
+            .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+            .map(m => m.name.replace('models/', ''));
         } catch (e) {
           if (i === keys.length - 1) throw e;
         }
       }
     }
-    if (prov === 'anthropic') return [];
-    if (prov === 'devin') return ['devin-session'];
-    const url = `${(base || PROVIDER_BASE_URLS[prov] || PROVIDER_BASE_URLS.openai).replace(/\/$/, '')}/models`;
-    const res = await fetch(url, { headers: { 'Authorization': `Bearer ${rawKey.trim()}` } });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message);
-    return (data.data || []).map(m => m.id).sort();
-  }, []);
 
-  // ── Test Connection ────────────────────────────────────────
+    if (provider.type === 'anthropic') return DEFAULT_MODEL_MAP.anthropic;
+    if (provider.type === 'devin') return DEFAULT_MODEL_MAP.devin;
+    if (provider.type === 'leonardo') return DEFAULT_MODEL_MAP.leonardo;
+
+    const effectiveBase = base || getEffectiveBase(prov);
+    const modelsEndpoint = getEffectiveEndpoint(prov, 'models') || '/models';
+    const url = joinEndpoint(effectiveBase, modelsEndpoint);
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${rawKey.trim()}` } });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || data.error);
+    return (data.data || []).map(m => m.id).sort();
+  }, [getEffectiveBase, getEffectiveEndpoint]);
+
   const testConnection = useCallback(async (prov, rawKey, base, model, prompt = 'Say OK') => {
     if (!rawKey) throw new Error('API key required');
+    const cur = stateRef.current;
+    const provider = getProviderFromState(cur, prov);
+    if (!provider) throw new Error('Provider not found');
     const cleanModel = sanitizeModel(model);
-    if (prov === 'gemini') {
+
+    if (provider.type === 'gemini') {
       const keys = Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)));
-      // Test ALL keys and collect per-key results
       const results = [];
-      for (let i = 0; i < keys.length; i++) {
-        const keyLabel = keys.length > 1 ? `Key ${i+1} (…${keys[i].slice(-6)})` : 'Key';
+      for (let i = 0; i < keys.length; i += 1) {
+        const keyLabel = keys.length > 1 ? `Key ${i + 1} (...${keys[i].slice(-6)})` : 'Key';
         try {
           const res = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${keys[i]}`,
-            { method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }) }
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: MAX_TOKENS.test } }),
+            },
           );
           const data = await res.json();
-          if (data.error) {
-            results.push(`${keyLabel}: ❌ ${data.error.message}`);
-          } else {
-            const reply = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK';
-            results.push(`${keyLabel}: ✅ "${reply}"`);
-          }
+          if (data.error) results.push(`${keyLabel}: FAILED ${data.error.message}`);
+          else results.push(`${keyLabel}: OK "${data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'OK'}"`);
         } catch (e) {
-          results.push(`${keyLabel}: ❌ ${e.message}`);
+          results.push(`${keyLabel}: FAILED ${e.message}`);
         }
       }
-      const allFailed = results.every(r => r.includes('❌'));
-      if (allFailed) throw new Error(results.join('\n'));
+      if (results.every(r => r.includes('FAILED'))) throw new Error(results.join('\n'));
       return results.join('\n');
     }
-    if (prov === 'anthropic') {
-      const url = `${(base || PROVIDER_BASE_URLS.anthropic).replace(/\/$/, '')}/messages`;
+
+    if (provider.type === 'anthropic') {
+      const url = joinEndpoint(base || getEffectiveBase(prov), getEffectiveEndpoint(prov, 'messages') || '/messages');
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': rawKey.trim(), 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' },
@@ -340,40 +606,42 @@ export function useAIStore() {
       if (data.error) throw new Error(data.error.message);
       return data.content?.[0]?.text?.trim() || 'OK';
     }
-    if (prov === 'custom') {
-      if (!base) throw new Error('Base URL required');
-      const parsedBody = state.customBodyTemplate.replace(/\{\{PROMPT\}\}/g, prompt).replace(/\{\{MODEL\}\}/g, cleanModel);
-      const res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${rawKey.trim()}` }, body: parsedBody });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message);
-      if (state.customResponsePath) { const val = getNestedValue(data, state.customResponsePath); if (val) return String(val).trim(); }
-      return JSON.stringify(data).substring(0, 50) + '...';
-    }
-    // OpenAI-compatible
-    const url = `${(base || PROVIDER_BASE_URLS[prov] || PROVIDER_BASE_URLS.openai).replace(/\/$/, '')}/chat/completions`;
+
+    if (provider.type === 'devin') return 'Devin key saved. Sessions are created only during generation.';
+    if (provider.type === 'leonardo') return 'Leonardo key saved. Image/video generation runs through the server proxy.';
+
+    const effectiveBase = base || getEffectiveBase(prov);
+    const chatEndpoint = getEffectiveEndpoint(prov, 'chat') || '/chat/completions';
+    const url = joinEndpoint(effectiveBase, chatEndpoint);
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${rawKey.trim()}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey.trim()}` },
       body: JSON.stringify({ model: cleanModel || 'gpt-4o', messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS.test }),
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
     return data.choices?.[0]?.message?.content?.trim() || 'OK';
-  }, [state.customBodyTemplate, state.customResponsePath]);
+  }, [getEffectiveBase, getEffectiveEndpoint]);
 
-  // ── Generic Provider Caller (with token limits) ────────────
   const callProviderAPI = async (provider, model, key, base, promptText, maxTokens = MAX_TOKENS.generate) => {
-    if (provider === 'gemini') {
+    const provDef = getProviderFromState(stateRef.current, provider);
+    if (!provDef) throw new Error('Provider not found');
+
+    if (provDef.type === 'gemini') {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens } }) }
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.7, maxOutputTokens: maxTokens } }),
+        },
       );
       const data = await res.json();
       return { data, status: res.status, provider: 'gemini' };
     }
-    if (provider === 'anthropic') {
-      const url = `${(base || PROVIDER_BASE_URLS.anthropic).replace(/\/$/, '')}/messages`;
+
+    if (provDef.type === 'anthropic') {
+      const url = joinEndpoint(base || getEffectiveBase(provider), getEffectiveEndpoint(provider, 'messages') || '/messages');
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerously-allow-browser': 'true' },
@@ -382,11 +650,11 @@ export function useAIStore() {
       const data = await res.json();
       return { data, status: res.status, provider: 'anthropic' };
     }
-    // OpenAI-compatible (openai, groq, grok, openrouter)
-    const url = `${(base || PROVIDER_BASE_URLS[provider] || PROVIDER_BASE_URLS.openai).replace(/\/$/, '')}/chat/completions`;
+
+    const url = joinEndpoint(base || getEffectiveBase(provider), getEffectiveEndpoint(provider, 'chat') || '/chat/completions');
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model: model || 'gpt-4o', messages: [{ role: 'user', content: promptText }], temperature: 0.7, max_tokens: maxTokens }),
     });
     const data = await res.json();
@@ -394,8 +662,14 @@ export function useAIStore() {
   };
 
   const extractText = ({ data, provider: prov }) => {
-    if (prov === 'gemini') { if (data.error) return null; return data.candidates?.[0]?.content?.parts?.[0]?.text || null; }
-    if (prov === 'anthropic') { if (data.error) return null; return data.content?.[0]?.text || null; }
+    if (prov === 'gemini') {
+      if (data.error) return null;
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    }
+    if (prov === 'anthropic') {
+      if (data.error) return null;
+      return data.content?.[0]?.text || null;
+    }
     if (data.error) return null;
     return data.choices?.[0]?.message?.content || null;
   };
@@ -405,67 +679,65 @@ export function useAIStore() {
     return code === 429 || code === 503 || code === 529;
   };
 
-  // ── Try a single provider with model fallbacks ─────────────
   const tryProvider = async (provId, promptText, maxTokens) => {
+    const cur = stateRef.current;
+    const provDef = getProviderFromState(cur, provId);
+    if (!providerHas(provDef, 'text')) return { success: false, reason: 'not_text_provider' };
     const rawKey = getEffectiveKey(provId);
     if (!rawKey) return { success: false, reason: 'no_key' };
 
-    const keys = provId === 'gemini' 
+    const keys = provDef.type === 'gemini'
       ? Array.from(new Set(rawKey.split(/[\n,]+/).map(k => k.trim()).filter(Boolean)))
       : [rawKey.trim()];
-
     if (keys.length === 0) return { success: false, reason: 'no_key' };
 
     const base = getEffectiveBase(provId);
-    const activeModel = (provId === state.provider) ? sanitizeModel(state.modelName) : '';
-    const userModels = (state.providerModels?.[provId] || []).map(sanitizeModel);
-
+    const activeModel = provId === cur.provider ? sanitizeModel(cur.modelName) : '';
+    const userModels = (cur.providerModels?.[provId] || []).map(sanitizeModel);
+    const defaults = DEFAULT_MODEL_MAP[provId] || [];
     const models = [
       ...(activeModel ? [activeModel] : []),
       ...userModels.filter(m => m && m !== activeModel),
+      ...defaults.filter(m => m && m !== activeModel && !userModels.includes(m)),
     ].filter(Boolean);
 
-    if (models.length === 0) {
-      const defaults = { gemini: 'gemini-2.0-flash', groq: 'llama-3.3-70b-versatile', openrouter: 'google/gemini-2.5-flash', openai: 'gpt-4o-mini', grok: 'grok-2', anthropic: 'claude-3-haiku-20240307' };
-      if (defaults[provId]) models.push(defaults[provId]);
-    }
-
-    for (let mIdx = 0; mIdx < models.length; mIdx++) {
+    for (let mIdx = 0; mIdx < models.length; mIdx += 1) {
       const model = models[mIdx];
-      for (let kIdx = 0; kIdx < keys.length; kIdx++) {
+      for (let kIdx = 0; kIdx < keys.length; kIdx += 1) {
         const key = keys[kIdx];
         try {
           if (mIdx > 0 || kIdx > 0) await new Promise(r => setTimeout(r, 600));
           const response = await callProviderAPI(provId, model, key, base, promptText, maxTokens);
           const text = extractText(response);
-          if (text) { console.log(`[AI] ✓ ${provId}/${model} (Key ${kIdx+1}) succeeded`); return { success: true, text }; }
-          if (isRetryable(response)) { 
-            console.warn(`[AI] ${provId}/${model} (Key ${kIdx+1}) rate limited/failed. Rotating...`); 
-            continue; 
+          if (text) {
+            console.log(`[AI] ${provId}/${model} succeeded`);
+            return { success: true, text };
           }
-          console.warn(`[AI] ${provId}/${model} (Key ${kIdx+1}) error: ${response.data?.error?.message || 'unknown'}`);
-          if (mIdx === models.length - 1 && kIdx === keys.length - 1) return { success: false, reason: response.data?.error?.message || 'error' };
-          break; // Not retryable -> next model
+          if (isRetryable(response)) continue;
+          if (mIdx === models.length - 1 && kIdx === keys.length - 1) {
+            return { success: false, reason: response.data?.error?.message || 'error' };
+          }
+          break;
         } catch (err) {
-          console.warn(`[AI] ${provId}/${model} (Key ${kIdx+1}) threw: ${err.message}`);
-          continue;
+          console.warn(`[AI] ${provId}/${model} failed: ${err.message}`);
         }
       }
     }
     return { success: false, reason: 'all_models_and_keys_failed' };
   };
 
-  // ── Main generateText with cross-provider cascade ──────────
   const generateText = async (promptText, maxTokens = MAX_TOKENS.generate) => {
-    // Rate limit
     checkRateLimit();
+    const cur = stateRef.current;
+    const activeProvider = getProviderFromState(cur, cur.provider);
 
-    // Devin — no cascade
-    if (state.provider === 'devin') {
+    if (activeProvider?.type === 'devin') {
       const key = getEffectiveKey('devin');
       if (!key) throw new Error('AI API Key is not set. Please configure it in Settings > AI Assistants.');
-      const res = await fetch('https://api.devin.ai/v1/sessions', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      const url = joinEndpoint(getEffectiveBase('devin'), getEffectiveEndpoint('devin', 'sessions') || '/sessions');
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({ prompt: promptText }),
       });
       const data = await res.json();
@@ -473,45 +745,30 @@ export function useAIStore() {
       return `[Devin Session Created]\nCheck progress at: https://app.devin.ai/sessions/${data.session_id || data.id}`;
     }
 
-    // Custom — no cascade
-    if (state.provider === 'custom') {
-      const key = getEffectiveKey('custom');
-      if (!key) throw new Error('AI API Key is not set. Please configure it in Settings > AI Assistants.');
-      const base = getEffectiveBase('custom');
-      if (!base) throw new Error('Base URL is required for Custom Provider.');
-      const parsedBody = state.customBodyTemplate.replace(/\{\{PROMPT\}\}/g, promptText).replace(/\{\{MODEL\}\}/g, sanitizeModel(state.modelName));
-      const res = await fetch(base, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` }, body: parsedBody });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error.message || 'Custom API Error');
-      if (state.customResponsePath) { const val = getNestedValue(data, state.customResponsePath); if (val) return String(val).trim(); }
-      return JSON.stringify(data);
-    }
-
-    // Cross-provider cascade: active provider first → free/cheap → paid
-    const cascade = [state.provider, ...CASCADE_ORDER.filter(p => p !== state.provider)];
+    const dynamicTextProviders = (cur.providers || []).filter(p => providerHas(p, 'text')).map(p => p.id);
+    const cascade = Array.from(new Set([
+      ...(providerHas(activeProvider, 'text') ? [cur.provider] : []),
+      ...DEFAULT_TEXT_CASCADE,
+      ...dynamicTextProviders,
+    ]));
     const tried = [];
 
     for (const provId of cascade) {
       if (!getEffectiveKey(provId)) continue;
-      console.log(`[AI] Cascade → trying ${provId}...`);
       tried.push(provId);
       const result = await tryProvider(provId, promptText, maxTokens);
-      if (result.success) {
-        return result.text;
-      }
-      console.warn(`[AI] Cascade: ${provId} failed (${result.reason}), moving on...`);
+      if (result.success) return result.text;
     }
 
     if (tried.length === 0) throw new Error('No AI API keys configured. Please add at least one in Settings > AI Assistants.');
     throw new Error(`All providers failed (tried: ${tried.join(', ')}). Please try again later or check your API keys.`);
   };
 
-  // ── Generate All Meta (1 call = title + desc + tags) ───────
   const generateAllMeta = async ({ context, theme = '', category = '' } = {}) => {
-    const cleanModel = sanitizeModel(state.modelName);
-    const cacheKey = getCacheKey('meta', state.provider, cleanModel, context, theme, category);
+    const cleanModel = sanitizeModel(stateRef.current.modelName);
+    const cacheKey = getCacheKey('meta', stateRef.current.provider, cleanModel, context, theme, category);
     const cached = getFromCache(cacheKey);
-    if (cached) { console.log('[AI] ✓ Meta cache hit for:', context); return cached; }
+    if (cached) return cached;
 
     const themeLine = theme ? `\nTheme/Mood: "${theme}"` : '';
     const categoryLine = category ? `\nYouTube Category: "${category}"` : '';
@@ -531,7 +788,6 @@ DESCRIPTION: <your description here>
 TAGS: <tag1, tag2, tag3, ..., tag20>`;
 
     const result = await generateText(prompt, MAX_TOKENS.generateAll);
-
     const titleMatch = result.match(/TITLE:\s*(.+?)(?:\n|$)/i);
     const descMatch = result.match(/DESCRIPTION:\s*([\s\S]+?)(?:\n---\s*\n|\n---$|---\s*\nTAGS:)/i);
     const tagsMatch = result.match(/TAGS:\s*([\s\S]+?)$/i);
@@ -539,29 +795,28 @@ TAGS: <tag1, tag2, tag3, ..., tag20>`;
     const title = titleMatch?.[1]?.replace(/^["'`]|["'`]$/g, '').trim() || '';
     const description = descMatch?.[1]?.trim() || '';
     const tagsRaw = tagsMatch?.[1]?.trim() || '';
-    // Clean tags: remove bullet markers, numbering, newlines → split by comma
     const tags = tagsRaw
       .replace(/[\n\r]+/g, ', ')
-      .replace(/^\s*[-•*]\s*/gm, '')
-      .replace(/^\s*\d+[\.\)]\s*/gm, '')
+      .replace(/^\s*[-*]\s*/gm, '')
+      .replace(/^\s*\d+[\.)]\s*/gm, '')
       .split(',')
       .map(t => t.trim().replace(/^["']|["']$/g, ''))
       .filter(t => t.length > 0 && t.length < 60)
       .slice(0, 20);
 
-    if (!title && !description && !tags.length) {
-      throw new Error('AI returned an unexpected format. Please try again.');
-    }
+    if (!title && !description && !tags.length) throw new Error('AI returned an unexpected format. Please try again.');
 
     const data = { title, description, tags };
     setToCache(cacheKey, data);
-    console.log('[AI] ✓ Generated & cached metadata for:', context);
     return data;
   };
 
   return {
     config: state,
     updateConfig,
+    addProvider,
+    deleteProvider,
+    updateProviderDetails,
     deleteApiKey,
     addApiKeys,
     generateText,
@@ -570,6 +825,7 @@ TAGS: <tag1, tag2, tag3, ..., tag20>`;
     testConnection,
     getEffectiveKey,
     getEffectiveBase,
+    getEffectiveEndpoint,
     saveProviderModels,
     getRemainingRequests,
   };

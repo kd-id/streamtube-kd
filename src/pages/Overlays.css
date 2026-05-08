@@ -1,6 +1,6 @@
 .overlay-grid {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 1fr 380px;
   gap: var(--space-lg);
   align-items: start;
 }
@@ -48,6 +48,7 @@
 .preview-canvas {
   width: 100%;
   aspect-ratio: 16/9;
+  min-height: 280px;
   background: #0a0a0f;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -205,6 +206,7 @@
 
 @media (max-width: 1024px) {
   .overlay-grid { grid-template-columns: 1fr; }
+  .overlay-sidebar { order: -1; }
 }
 
 /* ─── Scene Name Input ─── */
