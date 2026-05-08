@@ -384,6 +384,260 @@ function getPathParam(url, prefix) {
 }
 
 // ── FFmpeg Helpers ──
+function getAuthUser(req) {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith('Bearer ')) return null;
+  let userId = null;
+  try {
+    userId = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString()).userId;
+  } catch {
+    return null;
+  }
+  if (!userId) return null;
+  return getDb().prepare('SELECT id, nickname, email, avatar_color, avatar_url, role, created_at FROM users WHERE id = ?').get(userId) || null;
+}
+
+function normalizeRole(role) {
+  return role === 'admin' ? 'admin' : 'user';
+}
+
+function toClientUser(user) {
+  return {
+    id: user.id,
+    nickname: user.nickname,
+    email: user.email,
+    avatarColor: user.avatar_color,
+    avatar_url: user.avatar_url,
+    role: normalizeRole(user.role),
+    createdAt: user.created_at,
+  };
+}
+
+const DEFAULT_AI_PROVIDER_CONFIGS = [
+  {
+    id: 'leonardo',
+    name: 'Leonardo.Ai',
+    type: 'leonardo',
+    baseUrl: 'https://cloud.leonardo.ai/api/rest',
+    endpoints: {
+      image: '/v2/generations',
+      imageLegacy: '/v1/generations',
+      video: '/v2/generations',
+      videoImage: '/v1/generations-image-to-video',
+      status: '/v1/generations/{{id}}',
+    },
+  },
+];
+
+function readUserSetting(db, userId, key) {
+  const row = db.prepare('SELECT value FROM user_settings WHERE user_id = ? AND key = ?').get(userId, key);
+  if (!row?.value) return null;
+  try { return JSON.parse(row.value); } catch { return null; }
+}
+
+function joinApiUrl(baseUrl, endpoint) {
+  const base = String(baseUrl || '').trim().replace(/\/+$/g, '');
+  const pathPart = String(endpoint || '').trim();
+  if (!base) return pathPart;
+  if (!pathPart) return base;
+  return `${base}/${pathPart.replace(/^\/+/g, '')}`;
+}
+
+function getAIProviderConfig(aiConfig, providerId) {
+  const providers = Array.isArray(aiConfig?.providers) ? aiConfig.providers : [];
+  const allProviders = [...DEFAULT_AI_PROVIDER_CONFIGS, ...providers];
+  const provider = allProviders.find(p => p.id === providerId) || allProviders.find(p => p.id === 'leonardo');
+  if (!provider) return null;
+
+  const endpointOverrides = aiConfig?.providerEndpoints?.[provider.id] || {};
+  const baseOverride = aiConfig?.baseUrls?.[provider.id];
+  return {
+    ...provider,
+    baseUrl: baseOverride || provider.baseUrl || '',
+    endpoints: { ...(provider.endpoints || {}), ...endpointOverrides },
+  };
+}
+
+function getAIProviderKey(aiConfig, providerId) {
+  const raw = aiConfig?.apiKeys?.[providerId] || (aiConfig?.provider === providerId ? aiConfig?.apiKey : '') || '';
+  return String(raw).split(/[,\n]+/).map(k => k.trim()).filter(Boolean)[0] || '';
+}
+
+function extractGenerationId(data) {
+  return data?.sdGenerationJob?.generationId
+    || data?.generationJob?.generationId
+    || data?.generationId
+    || data?.id
+    || data?.generations_by_pk?.id
+    || data?.generation?.id
+    || data?.generation?.generationId
+    || data?.job?.id
+    || data?.data?.id
+    || data?.data?.generationId
+    || data?.data?.generationJob?.generationId
+    || data?.data?.sdGenerationJob?.generationId
+    || data?.data?.generation?.id
+    || null;
+}
+
+function extractGenerationStatus(data) {
+  return data?.generations_by_pk?.status
+    || data?.generation?.status
+    || data?.generationJob?.status
+    || data?.sdGenerationJob?.status
+    || data?.job?.status
+    || data?.data?.generationJob?.status
+    || data?.data?.sdGenerationJob?.status
+    || data?.data?.status
+    || data?.status
+    || null;
+}
+
+function extractGeneratedMedia(data) {
+  const images = [];
+  const videos = [];
+  const seenImages = new Set();
+  const seenVideos = new Set();
+  const imageExtensions = /\.(png|jpe?g|webp|gif|avif)(\?|#|$)/i;
+  const videoExtensions = /\.(mp4|webm|mov|m4v)(\?|#|$)/i;
+
+  const isUrl = value => /^https?:\/\//i.test(String(value || ''));
+  const addImage = (url, source = {}) => {
+    if (!isUrl(url) || seenImages.has(url)) return;
+    seenImages.add(url);
+    images.push({
+      id: source.id || source.imageId || source.generatedImageId || url,
+      url,
+    });
+  };
+  const addVideo = (url, source = {}) => {
+    if (!isUrl(url) || seenVideos.has(url)) return;
+    seenVideos.add(url);
+    videos.push({
+      id: source.id || source.videoId || source.generatedVideoId || url,
+      url,
+      thumbnailUrl: source.thumbnail_url || source.thumbnailUrl || source.preview_url || source.previewUrl || source.imageUrl || source.image_url,
+    });
+  };
+
+  const visitStructured = (items, type) => {
+    (Array.isArray(items) ? items : []).forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const imageUrl = item.url || item.image_url || item.imageUrl || item.imageURL
+        || item.generated_image_variation_generics?.[0]?.url
+        || item.generatedImageVariationGenerics?.[0]?.url;
+      const videoUrl = item.video_url || item.videoUrl || item.videoURL
+        || item.motionMP4URL || item.motionMp4Url || item.motion_mp4_url
+        || item.motionWEBMURL || item.motionWebmUrl || item.motion_webm_url;
+      const thumbnailUrl = item.thumbnail_url || item.thumbnailUrl || item.preview_url || item.previewUrl || imageUrl;
+
+      if (type !== 'video' && imageUrl) addImage(imageUrl, item);
+      if (videoUrl) addVideo(videoUrl, { ...item, thumbnailUrl });
+      if (type === 'video' && imageUrl) addVideo(imageUrl, item);
+    });
+  };
+
+  visitStructured(data?.generations_by_pk?.generated_images, 'image');
+  visitStructured(data?.generated_images, 'image');
+  visitStructured(data?.images, 'image');
+  visitStructured(data?.data?.generated_images, 'image');
+  visitStructured(data?.generations_by_pk?.generated_videos, 'video');
+  visitStructured(data?.generated_videos, 'video');
+  visitStructured(data?.videos, 'video');
+  visitStructured(data?.data?.generated_videos, 'video');
+
+  const scan = (node, keyName = '', seenNodes = new WeakSet()) => {
+    if (!node) return;
+    if (typeof node === 'string') {
+      if (!isUrl(node)) return;
+      const key = keyName.toLowerCase();
+      if (videoExtensions.test(node) || /(video|motion|mp4|webm|mov)/.test(key)) addVideo(node);
+      else addImage(node);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    if (seenNodes.has(node)) return;
+    seenNodes.add(node);
+    if (Array.isArray(node)) {
+      node.forEach(item => scan(item, keyName, seenNodes));
+      return;
+    }
+    Object.entries(node).forEach(([key, value]) => scan(value, key, seenNodes));
+  };
+
+  scan(data);
+  return { images, videos };
+}
+
+function hasExtractedMedia(media) {
+  return (media?.images?.length || 0) > 0 || (media?.videos?.length || 0) > 0;
+}
+
+async function fetchLeonardoJson(provider, apiKey, endpoint) {
+  const targetUrl = joinApiUrl(provider.baseUrl, endpoint);
+  const apiRes = await fetch(targetUrl, {
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${apiKey}`,
+    },
+  });
+  const data = await apiRes.json().catch(() => ({}));
+  if (!apiRes.ok) {
+    const message = data?.error || data?.message || data?.detail || `Leonardo API error (${apiRes.status})`;
+    const err = new Error(message);
+    err.status = apiRes.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function extractLeonardoUserId(data) {
+  return data?.user_details?.[0]?.user?.id
+    || data?.user?.id
+    || data?.id
+    || data?.data?.user_details?.[0]?.user?.id
+    || data?.data?.user?.id
+    || null;
+}
+
+function normalizeHistoryGeneration(gen) {
+  const data = { generations_by_pk: gen };
+  const media = extractGeneratedMedia(data);
+  return {
+    id: gen?.id,
+    generationId: gen?.id,
+    status: extractGenerationStatus(data),
+    prompt: gen?.prompt || gen?.parameters?.prompt || '',
+    modelId: gen?.modelId || gen?.model || gen?.model_id || '',
+    modelName: gen?.modelName || gen?.model?.name || gen?.modelId || gen?.model || '',
+    createdAt: gen?.createdAt || gen?.created_at || gen?.updatedAt || null,
+    width: gen?.imageWidth || gen?.width || gen?.parameters?.width || null,
+    height: gen?.imageHeight || gen?.height || gen?.parameters?.height || null,
+    rawResponse: gen,
+    media,
+  };
+}
+
+async function getLeonardoHistory(provider, apiKey, limit = 20) {
+  const userData = await fetchLeonardoJson(provider, apiKey, '/v1/me');
+  const userId = extractLeonardoUserId(userData);
+  if (!userId) {
+    const err = new Error('Leonardo user ID tidak ditemukan dari /v1/me');
+    err.status = 502;
+    err.data = userData;
+    throw err;
+  }
+  const safeLimit = Math.min(50, Math.max(1, Number(limit) || 20));
+  const history = await fetchLeonardoJson(provider, apiKey, `/v1/generations/user/${encodeURIComponent(userId)}?offset=0&limit=${safeLimit}`);
+  const generations = Array.isArray(history?.generations) ? history.generations : [];
+  return {
+    userId,
+    rawResponse: history,
+    generations: generations.map(normalizeHistoryGeneration),
+  };
+}
+
 async function getVideoInfo(filePath) {
   return new Promise((resolve) => {
     const proc = spawn('ffprobe', ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath], { shell: true, windowsHide: true });
@@ -782,14 +1036,14 @@ export const apiMiddleware = async (req, res, next) => {
             ];
             const avatarColor = colors[Math.floor(Math.random() * colors.length)];
 
-            db.prepare('INSERT INTO users (id, nickname, email, password_hash, salt, avatar_color, role) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, nickname, email.toLowerCase(), hash, salt, avatarColor, 'public');
+            db.prepare('INSERT INTO users (id, nickname, email, password_hash, salt, avatar_color, role) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, nickname, email.toLowerCase(), hash, salt, avatarColor, 'user');
 
             const token = crypto.randomBytes(32).toString('hex');
             // Simple token = base64(userId:random)
             const tokenPayload = Buffer.from(JSON.stringify({ userId: id, r: token })).toString('base64');
 
             dbLog('info', 'auth', `User registered: ${nickname} (${email})`);
-            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id, nickname, email: email.toLowerCase(), avatarColor, avatar_url: null, role: 'public', createdAt: new Date().toISOString() } });
+            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id, nickname, email: email.toLowerCase(), avatarColor, avatar_url: null, role: 'user', createdAt: new Date().toISOString() } });
           } catch (err) {
             console.error('[Auth Register]', err);
             return sendJSON(res, 500, { error: err.message });
@@ -812,7 +1066,7 @@ export const apiMiddleware = async (req, res, next) => {
             const tokenPayload = Buffer.from(JSON.stringify({ userId: user.id, r: token })).toString('base64');
 
             dbLog('info', 'auth', `User logged in: ${user.nickname}`);
-            return sendJSON(res, 200, { success: true, token: tokenPayload, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, role: user.role, createdAt: user.created_at } });
+            return sendJSON(res, 200, { success: true, token: tokenPayload, user: toClientUser(user) });
           } catch (err) {
             console.error('[Auth Login]', err);
             return sendJSON(res, 500, { error: err.message });
@@ -830,7 +1084,7 @@ export const apiMiddleware = async (req, res, next) => {
             const db = getDb();
             const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, role, created_at FROM users WHERE id = ?').get(userId);
             if (!user) return sendJSON(res, 401, { error: 'User not found' });
-            return sendJSON(res, 200, { user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, role: user.role, createdAt: user.created_at } });
+            return sendJSON(res, 200, { user: toClientUser(user) });
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }
@@ -854,8 +1108,8 @@ export const apiMiddleware = async (req, res, next) => {
             if (avatarColor) db.prepare('UPDATE users SET avatar_color = ? WHERE id = ?').run(avatarColor, userId);
             if (avatar_url !== undefined) db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatar_url, userId);
             
-            const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, created_at FROM users WHERE id = ?').get(userId);
-            return sendJSON(res, 200, { success: true, user: { id: user.id, nickname: user.nickname, email: user.email, avatarColor: user.avatar_color, avatar_url: user.avatar_url, createdAt: user.created_at } });
+            const user = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, role, created_at FROM users WHERE id = ?').get(userId);
+            return sendJSON(res, 200, { success: true, user: toClientUser(user) });
           } catch (err) {
             return sendJSON(res, 500, { error: err.message });
           }
@@ -888,6 +1142,67 @@ export const apiMiddleware = async (req, res, next) => {
         // ══════════════════════════════════════
         // ── REST API FOR ENTITIES ──
         // ══════════════════════════════════════
+        const adminUsersMatch = url.match(/^\/api\/admin\/users(?:\/([^\/]+)\/role|\/([^\/]+))?$/);
+        if (adminUsersMatch) {
+          try {
+            const currentUser = getAuthUser(req);
+            if (!currentUser) return sendJSON(res, 401, { error: 'Not authenticated' });
+            if (normalizeRole(currentUser.role) !== 'admin') return sendJSON(res, 403, { error: 'Admin access required' });
+
+            const db = getDb();
+            const roleTargetId = adminUsersMatch[1];
+            const deleteTargetId = adminUsersMatch[2];
+
+            if (req.method === 'GET' && !roleTargetId && !deleteTargetId) {
+              const users = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, role, created_at FROM users ORDER BY created_at ASC').all();
+              return sendJSON(res, 200, { success: true, users: users.map(toClientUser) });
+            }
+
+            if (req.method === 'PUT' && roleTargetId) {
+              const { role } = await readBody(req);
+              const nextRole = normalizeRole(role);
+              const target = db.prepare('SELECT id, role FROM users WHERE id = ?').get(roleTargetId);
+              if (!target) return sendJSON(res, 404, { error: 'User not found' });
+
+              if (normalizeRole(target.role) === 'admin' && nextRole !== 'admin') {
+                const adminCount = db.prepare("SELECT COUNT(*) AS total FROM users WHERE role = 'admin'").get()?.total || 0;
+                if (adminCount <= 1) return sendJSON(res, 400, { error: 'Minimal harus ada satu admin' });
+              }
+
+              db.prepare('UPDATE users SET role = ? WHERE id = ?').run(nextRole, roleTargetId);
+              const updated = db.prepare('SELECT id, nickname, email, avatar_color, avatar_url, role, created_at FROM users WHERE id = ?').get(roleTargetId);
+              dbLog('info', 'auth', `Admin changed role for ${updated.email} to ${nextRole}`);
+              return sendJSON(res, 200, { success: true, user: toClientUser(updated) });
+            }
+
+            if (req.method === 'DELETE' && deleteTargetId) {
+              if (deleteTargetId === currentUser.id) return sendJSON(res, 400, { error: 'Admin tidak bisa menghapus akun sendiri' });
+              const target = db.prepare('SELECT id, email, role FROM users WHERE id = ?').get(deleteTargetId);
+              if (!target) return sendJSON(res, 404, { error: 'User not found' });
+
+              if (normalizeRole(target.role) === 'admin') {
+                const adminCount = db.prepare("SELECT COUNT(*) AS total FROM users WHERE role = 'admin'").get()?.total || 0;
+                if (adminCount <= 1) return sendJSON(res, 400, { error: 'Minimal harus ada satu admin' });
+              }
+
+              db.prepare('DELETE FROM stream_sessions WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM user_settings WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM youtube_channels WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM media_files WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM overlays WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM playlists WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM streams WHERE user_id = ?').run(deleteTargetId);
+              db.prepare('DELETE FROM users WHERE id = ?').run(deleteTargetId);
+              dbLog('warn', 'auth', `Admin deleted account ${target.email}`);
+              return sendJSON(res, 200, { success: true });
+            }
+
+            return sendJSON(res, 405, { error: 'Method not allowed' });
+          } catch (err) {
+            return sendJSON(res, 500, { error: err.message });
+          }
+        }
+
         const entityMatch = url.match(/^\/api\/data\/([a-z_]+)(?:\/(.+))?$/);
         if (entityMatch) {
           const entity = entityMatch[1];
@@ -1015,6 +1330,145 @@ export const apiMiddleware = async (req, res, next) => {
         // ══════════════════════════════════════
         // ── REST API FOR SETTINGS ──
         // ══════════════════════════════════════
+        const aiMediaPath = url.split('?')[0];
+        if (aiMediaPath === '/api/ai-media/generate' && req.method === 'POST') {
+          try {
+            const currentUser = getAuthUser(req);
+            if (!currentUser) return sendJSON(res, 401, { error: 'Not authenticated' });
+
+            const body = await readBody(req);
+            const { providerId = 'leonardo', mode = 'image', apiVersion = 'v2', payload = {} } = body;
+            if (!payload || typeof payload !== 'object') return sendJSON(res, 400, { error: 'Payload wajib diisi' });
+
+            const db = getDb();
+            const aiConfig = readUserSetting(db, currentUser.id, 'ai_config') || {};
+            const provider = getAIProviderConfig(aiConfig, providerId);
+            if (!provider) return sendJSON(res, 400, { error: 'Provider AI tidak ditemukan' });
+
+            const apiKey = getAIProviderKey(aiConfig, provider.id);
+            if (!apiKey) return sendJSON(res, 400, { error: `API key ${provider.name || provider.id} belum disimpan di Settings > AI Assistants` });
+
+            const endpointKey = mode === 'video' ? (apiVersion === 'v1-itv' ? 'videoImage' : 'video') : (apiVersion === 'v1' ? 'imageLegacy' : 'image');
+            const endpoint = provider.endpoints?.[endpointKey] || provider.endpoints?.image || provider.endpoints?.video;
+            const targetUrl = joinApiUrl(provider.baseUrl, endpoint);
+            const apiRes = await fetch(targetUrl, {
+              method: 'POST',
+              headers: {
+                accept: 'application/json',
+                'content-type': 'application/json',
+                authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(payload),
+            });
+            const data = await apiRes.json().catch(() => ({}));
+            if (!apiRes.ok) {
+              const message = data?.error || data?.message || data?.detail || `Leonardo API error (${apiRes.status})`;
+              return sendJSON(res, apiRes.status, { success: false, error: message, data });
+            }
+
+            const generationId = extractGenerationId(data);
+            return sendJSON(res, 200, {
+              success: true,
+              generationId,
+              data,
+              media: extractGeneratedMedia(data),
+            });
+          } catch (err) {
+            return sendJSON(res, 500, { success: false, error: err.message });
+          }
+        }
+
+        const aiStatusMatch = aiMediaPath.match(/^\/api\/ai-media\/status\/([^\/]+)\/([^\/]+)$/);
+        if (aiStatusMatch && req.method === 'GET') {
+          try {
+            const currentUser = getAuthUser(req);
+            if (!currentUser) return sendJSON(res, 401, { error: 'Not authenticated' });
+
+            const providerId = decodeURIComponent(aiStatusMatch[1]);
+            const generationId = decodeURIComponent(aiStatusMatch[2]);
+            const db = getDb();
+            const aiConfig = readUserSetting(db, currentUser.id, 'ai_config') || {};
+            const provider = getAIProviderConfig(aiConfig, providerId);
+            if (!provider) return sendJSON(res, 400, { error: 'Provider AI tidak ditemukan' });
+
+            const apiKey = getAIProviderKey(aiConfig, provider.id);
+            if (!apiKey) return sendJSON(res, 400, { error: `API key ${provider.name || provider.id} belum disimpan di Settings > AI Assistants` });
+
+            const statusEndpoint = (provider.endpoints?.status || '/v1/generations/{{id}}').replace(/\{\{id\}\}/g, encodeURIComponent(generationId));
+            const targetUrl = joinApiUrl(provider.baseUrl, statusEndpoint);
+            const apiRes = await fetch(targetUrl, {
+              headers: {
+                accept: 'application/json',
+                authorization: `Bearer ${apiKey}`,
+              },
+            });
+            const data = await apiRes.json().catch(() => ({}));
+            if (!apiRes.ok) {
+              const message = data?.error || data?.message || data?.detail || `Leonardo API error (${apiRes.status})`;
+              return sendJSON(res, apiRes.status, { success: false, error: message, data });
+            }
+
+            let finalData = data;
+            let finalStatus = extractGenerationStatus(data);
+            let finalMedia = extractGeneratedMedia(data);
+            let historySynced = false;
+            if (!hasExtractedMedia(finalMedia) && provider.type === 'leonardo') {
+              try {
+                const history = await getLeonardoHistory(provider, apiKey, 20);
+                const match = history.generations.find(item => item.generationId === generationId);
+                if (match && (hasExtractedMedia(match.media) || String(match.status || '').toUpperCase() !== 'PENDING')) {
+                  finalData = match.rawResponse;
+                  finalStatus = match.status;
+                  finalMedia = match.media;
+                  historySynced = true;
+                }
+              } catch {
+                // Single-generation polling remains the primary path; history sync is a best-effort fallback.
+              }
+            }
+
+            return sendJSON(res, 200, {
+              success: true,
+              generationId,
+              status: finalStatus,
+              data: finalData,
+              media: finalMedia,
+              historySynced,
+            });
+          } catch (err) {
+            return sendJSON(res, 500, { success: false, error: err.message });
+          }
+        }
+
+        const aiHistoryMatch = aiMediaPath.match(/^\/api\/ai-media\/history\/([^\/]+)$/);
+        if (aiHistoryMatch && req.method === 'GET') {
+          try {
+            const currentUser = getAuthUser(req);
+            if (!currentUser) return sendJSON(res, 401, { error: 'Not authenticated' });
+
+            const providerId = decodeURIComponent(aiHistoryMatch[1]);
+            const query = new URL(req.url, 'http://localhost').searchParams;
+            const limit = query.get('limit') || 20;
+            const db = getDb();
+            const aiConfig = readUserSetting(db, currentUser.id, 'ai_config') || {};
+            const provider = getAIProviderConfig(aiConfig, providerId);
+            if (!provider) return sendJSON(res, 400, { error: 'Provider AI tidak ditemukan' });
+            if (provider.type !== 'leonardo') return sendJSON(res, 400, { error: 'History sync saat ini hanya tersedia untuk Leonardo.Ai' });
+
+            const apiKey = getAIProviderKey(aiConfig, provider.id);
+            if (!apiKey) return sendJSON(res, 400, { error: `API key ${provider.name || provider.id} belum disimpan di Settings > AI Assistants` });
+
+            const history = await getLeonardoHistory(provider, apiKey, limit);
+            return sendJSON(res, 200, {
+              success: true,
+              userId: history.userId,
+              generations: history.generations,
+            });
+          } catch (err) {
+            return sendJSON(res, err.status || 500, { success: false, error: err.message, data: err.data });
+          }
+        }
+
         const settingsMatch = url.match(/^\/api\/settings\/([a-zA-Z0-9_]+)$/);
         if (settingsMatch) {
           const key = settingsMatch[1];
@@ -1405,9 +1859,32 @@ export const apiMiddleware = async (req, res, next) => {
             fs.renameSync(tmpPath, filePath);
             const fileSize = fs.statSync(filePath).size;
 
+            // Save metadata to DB immediately
+            const db = getDb();
+            const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+            const mediaData = {
+              id: mediaId,
+              name: origName,
+              type: category === 'images' ? 'image' : category === 'audio' ? 'audio' : 'video',
+              size: fileSize,
+              duration: null,
+              date: new Date().toISOString(),
+              status: 'ready',
+              url: `/uploads/${relativePath}`,
+              serverFilename: relativePath,
+              serverPath: filePath,
+              category: category === 'images' ? 'image' : category === 'audio' ? 'music' : 'video',
+            };
+            try {
+              db.prepare('INSERT INTO media_files (id, user_id, data) VALUES (?, ?, ?)').run(mediaId, userId, JSON.stringify(mediaData));
+            } catch (dbErr) {
+              console.error('[Upload] DB save failed:', dbErr.message);
+            }
+
             return sendJSON(res, 200, {
               success: true,
               file: {
+                id: mediaId,
                 filename: relativePath,
                 originalname: origName,
                 size: fileSize,

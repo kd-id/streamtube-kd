@@ -1036,9 +1036,9 @@ IMPORTANT: Separate each set with "|||". Within each set, separate tags with com
         const upData = await upRes.json();
         if (upData.success && upData.file) {
           setThumbnailServerUrl(upData.file.url);
-          // Add to media library so it shows in gallery
+          // Backend already saves to DB — just update local state for UI
           addFiles([{
-            id: upData.file.filename,
+            id: upData.file.id || upData.file.filename,
             name: upData.file.originalname || upData.file.filename,
             serverFilename: upData.file.filename,
             type: 'image',

@@ -333,7 +333,7 @@ export default function MediaLibrary() {
 
         if (result && result.success) {
           newEntries.push({
-            id: Date.now() + i + Math.floor(Math.random() * 100),
+            id: result.file.id || (`media_${Date.now()}_${i}_${Math.random().toString(36).substring(2, 6)}`),
             name: uf.name, type: uf.type, category: activeCategory !== 'all' ? activeCategory : (uf.type === 'music' ? 'music' : uf.type),
             size: uf.size, duration: uf.duration || null, date: new Date().toISOString(),
             status: 'ready', objectUrl: result.file.url,
