@@ -267,7 +267,12 @@ export function AIProvider({ children }) {
   }, []);
   const getEffectiveEndpoint = useCallback((prov, endpointName) => {
     const cur = stateRef.current;
-    return cur.providerEndpoints?.[prov]?.[endpointName] || getProviderFromState(cur, prov)?.endpoints?.[endpointName] || '';
+    // If user explicitly set endpoint (even to empty), respect it
+    if (cur.providerEndpoints?.[prov] && endpointName in cur.providerEndpoints[prov]) {
+      return cur.providerEndpoints[prov][endpointName] || '';
+    }
+    // Fallback to provider default
+    return getProviderFromState(cur, prov)?.endpoints?.[endpointName] || '';
   }, []);
 
   const updateConfig = useCallback((updates) => {
@@ -394,8 +399,8 @@ export function AIProvider({ children }) {
     if (provider.type === 'devin') return DEFAULT_MODEL_MAP.devin;
     if (provider.type === 'leonardo') return DEFAULT_MODEL_MAP.leonardo;
     const effectiveBase = base || getEffectiveBase(prov);
-    const modelsEndpoint = getEffectiveEndpoint(prov, 'models') || '/models';
-    const url = joinEndpoint(effectiveBase, modelsEndpoint);
+    const modelsEndpoint = getEffectiveEndpoint(prov, 'models');
+    const url = joinEndpoint(effectiveBase, modelsEndpoint || '/models');
     const res = await safeFetch(url, { headers: { Authorization: `Bearer ${rawKey.trim()}` } });
     const data = await parseOpenAIResponse(res);
     if (data.error) throw new Error(data.error.message || data.error);
@@ -433,8 +438,8 @@ export function AIProvider({ children }) {
     if (provider.type === 'devin') return 'Devin key saved.';
     if (provider.type === 'leonardo') return 'Leonardo key saved.';
     const effectiveBase = base || getEffectiveBase(prov);
-    const chatEndpoint = getEffectiveEndpoint(prov, 'chat') || '/chat/completions';
-    const url = joinEndpoint(effectiveBase, chatEndpoint);
+    const chatEndpoint = getEffectiveEndpoint(prov, 'chat');
+    const url = joinEndpoint(effectiveBase, chatEndpoint || '/chat/completions');
     const res = await safeFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey.trim()}` }, body: JSON.stringify({ model: cleanModel || 'gpt-4o', messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS.test }) });
     const data = await parseOpenAIResponse(res);
     if (data.error) throw new Error(data.error.message);

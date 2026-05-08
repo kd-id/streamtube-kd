@@ -679,7 +679,7 @@ function AITab() {
   const endpointFields = useMemo(() => {
     if (!activeProvider) return [];
     if (activeProvider.type === 'gemini') return [];
-    if (activeProvider.type === 'anthropic') return [{ key: 'messages', label: 'Messages Endpoint', placeholder: '/messages' }];
+    if (activeProvider.type === 'anthropic') return [{ key: 'messages', label: 'Messages Endpoint', placeholder: '/messages (opsional, kosongkan jika base URL sudah lengkap)' }];
     if (activeProvider.type === 'devin') return [{ key: 'sessions', label: 'Sessions Endpoint', placeholder: '/sessions' }];
     if (activeProvider.type === 'leonardo') {
       return [
@@ -690,9 +690,10 @@ function AITab() {
         { key: 'status', label: 'Status Endpoint', placeholder: '/v1/generations/{{id}}' },
       ];
     }
+    // openai-compatible — endpoints optional, kosongkan jika base URL sudah termasuk path
     return [
-      { key: 'chat', label: 'Chat Endpoint', placeholder: '/chat/completions' },
-      { key: 'models', label: 'Models Endpoint', placeholder: '/models' },
+      { key: 'chat', label: 'Chat Endpoint', placeholder: '/chat/completions (opsional)' },
+      { key: 'models', label: 'Models Endpoint', placeholder: '/models (opsional)' },
     ];
   }, [activeProvider]);
 
