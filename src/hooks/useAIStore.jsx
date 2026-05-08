@@ -718,6 +718,11 @@ export function useAIStore() {
       ...defaults.filter(m => m && m !== activeModel && !userModels.includes(m)),
     ].filter(Boolean);
 
+    // Fallback: if no models found, try with common model names
+    if (models.length === 0) {
+      models.push('gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo');
+    }
+
     for (let mIdx = 0; mIdx < models.length; mIdx += 1) {
       const model = models[mIdx];
       for (let kIdx = 0; kIdx < keys.length; kIdx += 1) {
@@ -762,23 +767,28 @@ export function useAIStore() {
       return `[Devin Session Created]\nCheck progress at: https://app.devin.ai/sessions/${data.session_id || data.id}`;
     }
 
-    const dynamicTextProviders = (cur.providers || []).filter(p => providerHas(p, 'text')).map(p => p.id);
+    // Build cascade: active provider first, then defaults, then all text providers
+    const allTextProviders = (cur.providers || []).filter(p => providerHas(p, 'text')).map(p => p.id);
+    const activeId = providerHas(activeProvider, 'text') ? cur.provider : null;
     const cascade = Array.from(new Set([
-      ...(providerHas(activeProvider, 'text') ? [cur.provider] : []),
+      ...(activeId ? [activeId] : []),
       ...DEFAULT_TEXT_CASCADE,
-      ...dynamicTextProviders,
+      ...allTextProviders,
     ]));
+
     const tried = [];
+    const errors = [];
 
     for (const provId of cascade) {
       if (!getEffectiveKey(provId)) continue;
       tried.push(provId);
       const result = await tryProvider(provId, promptText, maxTokens);
       if (result.success) return result.text;
+      errors.push(`${provId}: ${result.reason}`);
     }
 
     if (tried.length === 0) throw new Error('No AI API keys configured. Please add at least one in Settings > AI Assistants.');
-    throw new Error(`All providers failed (tried: ${tried.join(', ')}). Please try again later or check your API keys.`);
+    throw new Error(`All providers failed:\n${errors.join('\n')}`);
   };
 
   const generateAllMeta = async ({ context, theme = '', category = '' } = {}) => {
