@@ -18,7 +18,13 @@ export function MediaProvider({ children }) {
         const res = await fetch('/api/data/media_files', { headers: { Authorization: `Bearer ${token}` } });
         const data = await res.json();
         if (data.success && data.data) {
-          setFiles(data.data);
+          // Sort: newest first
+          const sorted = data.data.sort((a, b) => {
+            const da = new Date(a.date || a.createdAt || a.created_at || 0).getTime();
+            const db = new Date(b.date || b.createdAt || b.created_at || 0).getTime();
+            return db - da;
+          });
+          setFiles(sorted);
         }
       } catch {}
     };
