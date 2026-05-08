@@ -282,9 +282,26 @@ function joinEndpoint(base, endpoint) {
   if (!cleanEndpoint) return cleanBase;
   if (/^https?:\/\//i.test(cleanEndpoint)) return cleanEndpoint;
   if (!cleanBase) return cleanEndpoint;
-  // If base already ends with the endpoint (e.g. user put full URL in base), skip
   if (cleanBase.endsWith(cleanEndpoint)) return cleanBase;
   return `${cleanBase}/${cleanEndpoint.replace(/^\/+/, '')}`;
+}
+
+// Parse response that might be SSE (data: {...}) or plain JSON
+async function parseOpenAIResponse(res) {
+  const text = await res.text();
+  // Try plain JSON first
+  try {
+    return JSON.parse(text);
+  } catch {}
+  // Try SSE: extract last complete JSON from "data: {...}" lines
+  const lines = text.split('\n').filter(l => l.startsWith('data: ') && !l.includes('[DONE]'));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      return JSON.parse(lines[i].slice(6));
+    } catch {}
+  }
+  // If nothing parsed, throw with raw response
+  throw new Error(`Invalid response: ${text.substring(0, 200)}`);
 }
 
 export function useAIStore() {
@@ -558,7 +575,7 @@ export function useAIStore() {
     const modelsEndpoint = getEffectiveEndpoint(prov, 'models') || '/models';
     const url = joinEndpoint(effectiveBase, modelsEndpoint);
     const res = await fetch(url, { headers: { Authorization: `Bearer ${rawKey.trim()}` } });
-    const data = await res.json();
+    const data = await parseOpenAIResponse(res);
     if (data.error) throw new Error(data.error.message || data.error);
     return (data.data || []).map(m => m.id).sort();
   }, [getEffectiveBase, getEffectiveEndpoint]);
@@ -618,7 +635,7 @@ export function useAIStore() {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${rawKey.trim()}` },
       body: JSON.stringify({ model: cleanModel || 'gpt-4o', messages: [{ role: 'user', content: prompt }], max_tokens: MAX_TOKENS.test }),
     });
-    const data = await res.json();
+    const data = await parseOpenAIResponse(res);
     if (data.error) throw new Error(data.error.message);
     return data.choices?.[0]?.message?.content?.trim() || 'OK';
   }, [getEffectiveBase, getEffectiveEndpoint]);
@@ -657,7 +674,7 @@ export function useAIStore() {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model: model || 'gpt-4o', messages: [{ role: 'user', content: promptText }], temperature: 0.7, max_tokens: maxTokens }),
     });
-    const data = await res.json();
+    const data = await parseOpenAIResponse(res);
     return { data, status: res.status, provider: 'openai-compat' };
   };
 
