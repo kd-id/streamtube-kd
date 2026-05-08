@@ -712,16 +712,12 @@ function AITab() {
     setEndpointDrafts(endpoints);
     const savedModels = config.providerModels?.[activeProvider.id] || [];
     setModelList(savedModels.length ? savedModels : []);
-    // Only set modelName when switching providers, not on every config change
-    if (activeProvider.id === config.provider) {
-      setModelName(config.modelName || savedModels[0] || '');
-    } else {
-      setModelName(savedModels[0] || '');
-    }
+    // Only set modelName when switching providers
+    setModelName(activeProvider.id === config.provider ? (config.modelName || savedModels[0] || '') : (savedModels[0] || ''));
     setFetchMsg('');
     setTestResult(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeProvider?.id, config.provider, config.providerModels]);
+  }, [activeProvider?.id, config.provider]);
 
   const handleProviderSelect = (prov) => {
     setProvider(prov.id);
@@ -779,8 +775,8 @@ function AITab() {
 
   const handleModelSelect = (model) => {
     setModelName(model);
-    updateConfig({ provider, modelName: model, baseUrl: baseUrl.trim() });
-    if (modelList.length) saveProviderModels(provider, modelList);
+    // Only update the active model, don't touch providerModels
+    updateConfig({ provider, modelName: model });
     setSaved(true);
     setTimeout(() => setSaved(false), 1600);
   };
