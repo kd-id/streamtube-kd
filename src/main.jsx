@@ -8,6 +8,7 @@ import { MediaProvider } from './hooks/useMediaStore';
 import { PlaylistProvider } from './hooks/usePlaylistStore';
 import { LogProvider } from './hooks/useLogStore';
 import { OverlayProvider } from './hooks/useOverlayStore';
+import { AIProvider } from './hooks/useAIStore';
 import App from './App';
 import './index.css';
 
@@ -18,11 +19,13 @@ createRoot(document.getElementById('root')).render(
           <YouTubeProvider>
             <MediaProvider>
               <PlaylistProvider>
-                <StreamProvider>
-                  <OverlayProvider>
-                    <App />
-                  </OverlayProvider>
-                </StreamProvider>
+                <AIProvider>
+                  <StreamProvider>
+                    <OverlayProvider>
+                      <App />
+                    </OverlayProvider>
+                  </StreamProvider>
+                </AIProvider>
               </PlaylistProvider>
             </MediaProvider>
           </YouTubeProvider>
