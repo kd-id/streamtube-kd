@@ -7,7 +7,12 @@
     "start": "NODE_ENV=production node server.js",
     "dev": "node server.js",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "update": "bash update.sh",
+    "update:force": "bash update.sh --force",
+    "setup": "npm install && npm run build && pm2 start server.js --name streamtube",
+    "restart": "pm2 restart streamtube",
+    "logs": "pm2 logs streamtube"
   },
   "devDependencies": {
     "typescript": "~6.0.2",
